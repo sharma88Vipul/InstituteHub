@@ -1,0 +1,188 @@
+@page "/batches/new"
+@page "/batches/{Id:guid}/edit"
+@attribute [Authorize(Policy = Policies.ManageBatches)]
+
+@using InstituteHub.Application.Batches
+@using InstituteHub.Application.Fees
+@using InstituteHub.Application.Users
+@using InstituteHub.Domain.Batches
+
+@inject BatchService Batches
+@inject FeePlanService FeePlans
+@inject IUserDirectory Users
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@(Id is null ? "New batch" : "Edit batch") – InstituteHub</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-3">@(Id is null ? "New batch" : "Edit batch")</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_notFound)
+{
+    <MudAlert Severity="Severity.Warning">Batch not found. <MudLink Href="batches">Back to batches</MudLink></MudAlert>
+}
+else
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_m.Name" Label="Batch name" Placeholder="e.g. Class 12 Physics – Evening"
+                              Variant="Variant.Outlined" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_m.Subject" Label="Subject" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid?" @bind-Value="_m.TeacherId" Label="Teacher" Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var t in _teachers)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)t.Id)">@t.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid?" @bind-Value="_m.DefaultFeePlanId" Label="Default fee plan" Variant="Variant.Outlined" Clearable="true"
+                           HelperText="Pre-selected when a student joins this batch">
+                    @foreach (var p in _plans)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)p.Id)">@p.Name – @p.Summary</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudText Typo="Typo.body2" Class="mb-1">Days</MudText>
+                <div class="d-flex flex-wrap gap-1">
+                    @foreach (var (day, label) in BatchSchedule.AllDays)
+                    {
+                        <MudChip T="string" Color="@(_m.Days.HasFlag(day) ? Color.Primary : Color.Default)"
+                                 Variant="@(_m.Days.HasFlag(day) ? Variant.Filled : Variant.Outlined)"
+                                 OnClick="() => ToggleDay(day)">@label</MudChip>
+                    }
+                </div>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudTimePicker @bind-Time="_m.StartTime" Label="Start time" Variant="Variant.Outlined" AmPm="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudTimePicker @bind-Time="_m.EndTime" Label="End time" Variant="Variant.Outlined" AmPm="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField T="int?" @bind-Value="_m.Capacity" Label="Capacity (optional)" Min="1" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudDatePicker @bind-Date="_m.StartDate" Label="Start date" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudDatePicker @bind-Date="_m.EndDate" Label="End date (optional)" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" Clearable="true" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <ErrorSummary Errors="_errors" />
+
+    <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
+        <MudButton Href="@(Id is null ? "batches" : $"batches/{Id}")" Variant="Variant.Text">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_saving" OnClick="SaveAsync">Save</MudButton>
+    </MudStack>
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private readonly FormModel _m = new();
+    private IReadOnlyList<UserOption> _teachers = [];
+    private IReadOnlyList<FeePlanOption> _plans = [];
+    private IReadOnlyList<Error>? _errors;
+    private bool _loading = true;
+    private bool _notFound;
+    private bool _saving;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _teachers = await Users.GetTeachersAsync();
+        _plans = await FeePlans.GetOptionsAsync();
+
+        if (Id is { } id)
+        {
+            var b = await Batches.GetAsync(id);
+            if (b is null)
+            {
+                _notFound = true;
+            }
+            else
+            {
+                _m.Name = b.Name;
+                _m.Subject = b.Subject;
+                _m.TeacherId = b.TeacherId;
+                _m.DefaultFeePlanId = b.DefaultFeePlanId;
+                _m.Days = b.DaysOfWeek;
+                _m.StartTime = b.StartTime?.ToTimeSpan();
+                _m.EndTime = b.EndTime?.ToTimeSpan();
+                _m.Capacity = b.Capacity;
+                _m.StartDate = b.StartDate.ToDateTime(TimeOnly.MinValue);
+                _m.EndDate = b.EndDate?.ToDateTime(TimeOnly.MinValue);
+            }
+        }
+        else
+        {
+            _m.StartDate = Clock.Today().ToDateTime(TimeOnly.MinValue);
+        }
+
+        _loading = false;
+    }
+
+    private void ToggleDay(WeekDays day) => _m.Days ^= day;
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        var request = new BatchRequest(
+            _m.Name, _m.Subject, _m.TeacherId,
+            _m.StartTime is { } st ? TimeOnly.FromTimeSpan(st) : null,
+            _m.EndTime is { } et ? TimeOnly.FromTimeSpan(et) : null,
+            _m.Days, _m.Capacity,
+            DateOnly.FromDateTime(_m.StartDate ?? DateTime.Today),
+            _m.EndDate is { } ed ? DateOnly.FromDateTime(ed) : null,
+            _m.DefaultFeePlanId);
+
+        Guid? savedId = Id;
+        Result result;
+        if (Id is { } id)
+        {
+            result = await Batches.UpdateAsync(id, request);
+        }
+        else
+        {
+            var created = await Batches.CreateAsync(request);
+            result = created;
+            if (created.IsSuccess) savedId = created.Value;
+        }
+
+        _saving = false;
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsFailure) return;
+
+        Snackbar.Add("Batch saved.", Severity.Success);
+        Navigation.NavigateTo($"batches/{savedId}");
+    }
+
+    private sealed class FormModel
+    {
+        public string Name { get; set; } = "";
+        public string? Subject { get; set; }
+        public Guid? TeacherId { get; set; }
+        public Guid? DefaultFeePlanId { get; set; }
+        public WeekDays Days { get; set; } = WeekDays.Monday | WeekDays.Tuesday | WeekDays.Wednesday
+                                             | WeekDays.Thursday | WeekDays.Friday | WeekDays.Saturday;
+        public TimeSpan? StartTime { get; set; }
+        public TimeSpan? EndTime { get; set; }
+        public int? Capacity { get; set; }
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+    }
+}

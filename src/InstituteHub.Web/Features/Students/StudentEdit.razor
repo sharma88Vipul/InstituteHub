@@ -1,0 +1,136 @@
+@page "/students/{Id:guid}/edit"
+@attribute [Authorize(Policy = Policies.ManageStudents)]
+
+@using InstituteHub.Application.Students
+
+@inject StudentService Students
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Edit student – InstituteHub</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_m is null)
+{
+    <MudAlert Severity="Severity.Warning">Student not found. <MudLink Href="students">Back to students</MudLink></MudAlert>
+}
+else
+{
+    <MudText Typo="Typo.h5" Class="mb-3">Edit student</MudText>
+
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_m.FirstName" Label="First name" Variant="Variant.Outlined" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_m.LastName" Label="Last name" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudTextField @bind-Value="_m.AdmissionNo" Label="Admission no." Variant="Variant.Outlined" Required="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudDatePicker @bind-Date="_m.AdmissionDate" Label="Admission date" Variant="Variant.Outlined" DateFormat="dd-MM-yyyy" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudSelect T="string" @bind-Value="_m.Gender" Label="Gender" Variant="Variant.Outlined" Clearable="true">
+                    <MudSelectItem T="string" Value="@("Male")">Male</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("Female")">Female</MudSelectItem>
+                    <MudSelectItem T="string" Value="@("Other")">Other</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudDatePicker @bind-Date="_m.DateOfBirth" Label="Date of birth" Variant="Variant.Outlined"
+                               DateFormat="dd-MM-yyyy" MaxDate="DateTime.Today" Editable="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_m.ClassGrade" Label="Class" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_m.SchoolName" Label="School" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_m.Phone" Label="Student's own phone" InputType="InputType.Telephone" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_m.Address" Label="Address" Lines="2" Variant="Variant.Outlined" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_m.Notes" Label="Notes" Lines="3" Variant="Variant.Outlined" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <ErrorSummary Errors="_errors" />
+
+    <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
+        <MudButton Href="@($"students/{Id}")" Variant="Variant.Text">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_saving" OnClick="SaveAsync">Save</MudButton>
+    </MudStack>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private EditModel? _m;
+    private IReadOnlyList<Error>? _errors;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var s = await Students.GetAsync(Id);
+        _m = s is null ? null : new EditModel
+        {
+            AdmissionNo = s.AdmissionNo,
+            FirstName = s.FirstName,
+            LastName = s.LastName,
+            Gender = s.Gender,
+            DateOfBirth = s.DateOfBirth?.ToDateTime(TimeOnly.MinValue),
+            Phone = PhoneNumber.Format(s.Phone),
+            SchoolName = s.SchoolName,
+            ClassGrade = s.ClassGrade,
+            Address = s.Address,
+            AdmissionDate = s.AdmissionDate.ToDateTime(TimeOnly.MinValue),
+            Notes = s.Notes,
+        };
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_m is null) return;
+        _saving = true;
+
+        var result = await Students.UpdateAsync(Id, new UpdateStudentRequest(
+            _m.AdmissionNo, _m.FirstName, _m.LastName, _m.Gender,
+            _m.DateOfBirth is { } dob ? DateOnly.FromDateTime(dob) : null,
+            _m.Phone, _m.SchoolName, _m.ClassGrade, _m.Address,
+            DateOnly.FromDateTime(_m.AdmissionDate ?? DateTime.Today), _m.Notes));
+
+        _saving = false;
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsFailure) return;
+
+        Snackbar.Add("Student updated.", Severity.Success);
+        Navigation.NavigateTo($"students/{Id}");
+    }
+
+    private sealed class EditModel
+    {
+        public string AdmissionNo { get; set; } = "";
+        public string FirstName { get; set; } = "";
+        public string? LastName { get; set; }
+        public string? Gender { get; set; }
+        public DateTime? DateOfBirth { get; set; }
+        public string? Phone { get; set; }
+        public string? SchoolName { get; set; }
+        public string? ClassGrade { get; set; }
+        public string? Address { get; set; }
+        public DateTime? AdmissionDate { get; set; }
+        public string? Notes { get; set; }
+    }
+}

@@ -1,0 +1,47 @@
+@page "/onboarding"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Policy = Policies.ManageInstitute)]
+
+@using InstituteHub.Application.Tenants
+
+@inject TenantService Tenants
+
+<PageTitle>Set up your institute – InstituteHub</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true">Welcome to InstituteHub</MudText>
+<MudText Typo="Typo.body1" Class="mb-4">Complete these steps to start collecting fees. You can do them in any order.</MudText>
+
+@if (_checklist is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <MudProgressLinear Value="@(100.0 * _checklist.CompletedSteps / _checklist.TotalSteps)" Color="Color.Primary" Rounded="true" Class="mb-4" />
+
+    <MudPaper Outlined="true">
+        <MudList T="string" ReadOnly="true">
+            <ChecklistStep Done="_checklist.HasReceiptPrefix" Title="Receipt prefix" Detail="Used in receipt numbers, e.g. ABC/2026-27/00001." Href="settings" />
+            <MudDivider />
+            <ChecklistStep Done="_checklist.HasLogo" Title="Institute logo" Detail="Printed on fee receipts." Href="settings" />
+            <MudDivider />
+            <ChecklistStep Done="_checklist.HasBatch" Title="Create your first batch" Detail="e.g. Class 12 Physics – Evening." Href="batches" />
+            <MudDivider />
+            <ChecklistStep Done="_checklist.HasFeePlan" Title="Create a fee plan" Detail="One-time, instalments or monthly." Href="fees/plans" />
+            <MudDivider />
+            <ChecklistStep Done="_checklist.StudentCount > 0" Title="Add or import students" Detail="Admit one by one or import a CSV file." Href="students" />
+        </MudList>
+    </MudPaper>
+
+    <MudButton Href="dashboard" Variant="Variant.Filled" Color="Color.Primary" Class="mt-4" FullWidth="true">Go to dashboard</MudButton>
+}
+
+@code {
+    private OnboardingChecklist? _checklist;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _checklist = await Tenants.GetOnboardingChecklistAsync()
+                     ?? new OnboardingChecklist(false, false, false, false, 0);
+    }
+}

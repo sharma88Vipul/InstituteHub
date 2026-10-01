@@ -1,0 +1,188 @@
+@page "/students/new"
+@attribute [Authorize(Policy = Policies.ManageStudents)]
+
+@using InstituteHub.Application.Batches
+@using InstituteHub.Application.Fees
+@using InstituteHub.Application.Students
+
+@inject StudentService Students
+@inject BatchService Batches
+@inject FeePlanService FeePlans
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Admit student – InstituteHub</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-3">Admit a student</MudText>
+
+<MudPaper Outlined="true" Class="pa-4 mb-3">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Student</MudText>
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_m.FirstName" Label="First name" Variant="Variant.Outlined" Required="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_m.LastName" Label="Last name" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudSelect T="string" @bind-Value="_m.Gender" Label="Gender" Variant="Variant.Outlined" Clearable="true">
+                <MudSelectItem T="string" Value="@("Male")">Male</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Female")">Female</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Other")">Other</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudDatePicker @bind-Date="_m.DateOfBirth" Label="Date of birth" Variant="Variant.Outlined"
+                           DateFormat="dd-MM-yyyy" MaxDate="DateTime.Today" Editable="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_m.ClassGrade" Label="Class" Placeholder="e.g. Class 11, Dropper" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_m.SchoolName" Label="School" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="_m.Phone" Label="Student's own phone (optional)" InputType="InputType.Telephone" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudTextField @bind-Value="_m.Address" Label="Address" Lines="2" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudDatePicker @bind-Date="_m.AdmissionDate" Label="Admission date" Variant="Variant.Outlined"
+                           DateFormat="dd-MM-yyyy" Required="true" />
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudTextField @bind-Value="_m.AdmissionNo" Label="Admission no." Variant="Variant.Outlined"
+                          HelperText="Leave blank to number automatically" />
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+<MudPaper Outlined="true" Class="pa-4 mb-3">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Parent / guardian</MudText>
+    <GuardianFields Model="_guardian" />
+</MudPaper>
+
+<MudPaper Outlined="true" Class="pa-4 mb-3">
+    <MudText Typo="Typo.subtitle1" Class="mb-2">Batch and fees</MudText>
+    @if (_batches.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true">
+            No batches yet. You can admit the student now and add them to a batch later,
+            or <MudLink Href="batches/new">create a batch</MudLink> first.
+        </MudAlert>
+    }
+    else
+    {
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="5">
+                <MudSelect T="Guid?" Value="_m.BatchId" ValueChanged="OnBatchChanged" Label="Batch (optional)"
+                           Variant="Variant.Outlined" Clearable="true">
+                    @foreach (var batch in _batches)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)batch.Id)">@batch.Name (@batch.Schedule)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            @if (_m.BatchId is not null)
+            {
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="Guid?" @bind-Value="_m.FeePlanId" Label="Fee plan" Variant="Variant.Outlined" Required="true">
+                        @foreach (var plan in _plans)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)plan.Id)">@plan.Name – @plan.Summary</MudSelectItem>
+                        }
+                    </MudSelect>
+                    @if (_plans.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption">No fee plans yet. <MudLink Href="fees/plans">Create one</MudLink>.</MudText>
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudNumericField T="decimal" @bind-Value="_m.Discount" Label="Total discount (₹)" Min="0"
+                                     Variant="Variant.Outlined" Format="N0" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudPaper>
+
+<ErrorSummary Errors="_errors" />
+
+<MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mb-6">
+    <MudButton Href="students" Variant="Variant.Text">Cancel</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Disabled="_saving" OnClick="SaveAsync">
+        @(_saving ? "Saving…" : "Admit student")
+    </MudButton>
+</MudStack>
+
+@code {
+    private readonly AdmissionModel _m = new();
+    private readonly GuardianFormModel _guardian = new();
+    private IReadOnlyList<BatchOption> _batches = [];
+    private IReadOnlyList<FeePlanOption> _plans = [];
+    private IReadOnlyList<Error>? _errors;
+    private bool _saving;
+
+    [SupplyParameterFromQuery(Name = "batch")]
+    private Guid? BatchFromQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _m.AdmissionDate = Clock.Today().ToDateTime(TimeOnly.MinValue);
+        _batches = await Batches.GetOptionsAsync();
+        _plans = await FeePlans.GetOptionsAsync();
+        if (BatchFromQuery is { } batchId && _batches.Any(b => b.Id == batchId)) OnBatchChanged(batchId);
+    }
+
+    private void OnBatchChanged(Guid? batchId)
+    {
+        _m.BatchId = batchId;
+        _m.FeePlanId = _batches.FirstOrDefault(b => b.Id == batchId)?.DefaultFeePlanId;
+    }
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _errors = null;
+
+        var request = new AdmissionRequest(
+            _m.AdmissionNo, _m.FirstName, _m.LastName, _m.Gender,
+            _m.DateOfBirth is { } dob ? DateOnly.FromDateTime(dob) : null,
+            _m.Phone, _m.SchoolName, _m.ClassGrade, _m.Address,
+            DateOnly.FromDateTime(_m.AdmissionDate ?? DateTime.Today), null,
+            _guardian.LinkedGuardianId,
+            _guardian.LinkedGuardianId is null ? _guardian.ToInput() : null,
+            _m.BatchId, _m.FeePlanId, _m.Discount);
+
+        var result = await Students.AdmitAsync(request);
+        _saving = false;
+
+        if (result.IsFailure)
+        {
+            _errors = result.Errors;
+            return;
+        }
+
+        Snackbar.Add($"{_m.FirstName} has been admitted.", Severity.Success);
+        Navigation.NavigateTo($"students/{result.Value}");
+    }
+
+    private sealed class AdmissionModel
+    {
+        public string FirstName { get; set; } = "";
+        public string? LastName { get; set; }
+        public string? Gender { get; set; }
+        public DateTime? DateOfBirth { get; set; }
+        public string? ClassGrade { get; set; }
+        public string? SchoolName { get; set; }
+        public string? Phone { get; set; }
+        public string? Address { get; set; }
+        public DateTime? AdmissionDate { get; set; }
+        public string? AdmissionNo { get; set; }
+        public Guid? BatchId { get; set; }
+        public Guid? FeePlanId { get; set; }
+        public decimal Discount { get; set; }
+    }
+}

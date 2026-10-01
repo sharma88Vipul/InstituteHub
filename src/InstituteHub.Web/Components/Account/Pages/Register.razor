@@ -1,0 +1,10 @@
+@page "/Account/Register"
+
+@inject IdentityRedirectManager RedirectManager
+
+@* Users never register on their own: an institute owner signs up (creating the institute),
+   and staff/teachers are invited by the owner (Users module). *@
+
+@code {
+    protected override void OnInitialized() => RedirectManager.RedirectTo("signup");
+}

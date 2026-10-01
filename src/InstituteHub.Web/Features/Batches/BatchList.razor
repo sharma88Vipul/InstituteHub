@@ -1,0 +1,84 @@
+@page "/batches"
+@attribute [Authorize(Policy = Policies.ViewStudents)]
+
+@using InstituteHub.Application.Batches
+
+@inject BatchService Batches
+
+<PageTitle>Batches – InstituteHub</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+    <MudText Typo="Typo.h5">Batches</MudText>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+        <MudSwitch T="bool" Value="_showInactive" ValueChanged="OnShowInactiveChanged" Label="Show inactive" Color="Color.Primary" />
+        <AuthorizeView Policy="@Policies.ManageBatches">
+            <MudButton Href="batches/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New batch</MudButton>
+        </AuthorizeView>
+    </MudStack>
+</MudStack>
+
+@if (_batches is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_batches.Count == 0)
+{
+    <MudPaper Outlined="true" Class="pa-6">
+        <MudText>No batches yet.</MudText>
+        <AuthorizeView Policy="@Policies.ManageBatches">
+            <MudText Typo="Typo.body2">Create your first batch, e.g. "Class 12 Physics – Evening".</MudText>
+        </AuthorizeView>
+    </MudPaper>
+}
+else
+{
+    <MudGrid Spacing="2">
+        @foreach (var b in _batches)
+        {
+            <MudItem xs="12" sm="6" lg="4">
+                <MudCard Outlined="true" Style="@(b.IsActive ? null : "opacity: .6;")">
+                    <MudCardContent>
+                        <MudLink Href="@($"batches/{b.Id}")" Underline="Underline.None">
+                            <MudText Typo="Typo.h6">@b.Name</MudText>
+                        </MudLink>
+                        @if (b.Subject is { } subject)
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@subject</MudText>
+                        }
+                        <MudText Typo="Typo.body2" Class="mt-2">
+                            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />@b.Schedule
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />@(b.TeacherName ?? "No teacher assigned")
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            <MudIcon Icon="@Icons.Material.Filled.Groups" Size="Size.Small" Class="mr-1" Style="vertical-align: middle;" />
+                            @b.EnrolledCount @(b.Capacity is { } cap ? $"/ {cap}" : "") students
+                        </MudText>
+                        @if (!b.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Class="mt-2">Inactive</MudChip>
+                        }
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Href="@($"batches/{b.Id}")" Variant="Variant.Text" Color="Color.Primary">Open</MudButton>
+                        <MudButton Href="@($"students?batch={b.Id}")" Variant="Variant.Text">Students</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private IReadOnlyList<BatchListItem>? _batches;
+    private bool _showInactive;
+
+    protected override async Task OnInitializedAsync() => _batches = await Batches.ListAsync(_showInactive);
+
+    private async Task OnShowInactiveChanged(bool value)
+    {
+        _showInactive = value;
+        _batches = await Batches.ListAsync(_showInactive);
+    }
+}

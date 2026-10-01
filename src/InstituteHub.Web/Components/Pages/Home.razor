@@ -1,0 +1,29 @@
+@page "/"
+
+@inject NavigationManager Navigation
+
+<PageTitle>InstituteHub</PageTitle>
+
+<MudStack Spacing="3" Class="mt-2" Style="max-width: 40rem;">
+    <MudText Typo="Typo.h4">Run your coaching institute from your phone</MudText>
+    <MudText Typo="Typo.body1">
+        Students, batches, attendance, fee collection with receipts, and WhatsApp fee reminders to parents.
+    </MudText>
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+        <MudButton Href="signup" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large">Start free trial</MudButton>
+        <MudButton Href="Account/Login" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Large">Log in</MudButton>
+    </MudStack>
+</MudStack>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationState is not null && (await AuthenticationState).User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo("dashboard", replace: true);
+        }
+    }
+}

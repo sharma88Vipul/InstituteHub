@@ -1,0 +1,100 @@
+@using InstituteHub.Application.Students
+@using InstituteHub.Domain.Students
+
+@inject StudentService Students
+
+@* Guardian inputs. Typing a phone number that already exists offers to link that guardian (siblings). *@
+
+<MudGrid Spacing="2">
+    <MudItem xs="12" sm="6">
+        <MudTextField @bind-Value="Model.Phone" Label="Mobile number (WhatsApp)" InputType="InputType.Telephone"
+                      Variant="Variant.Outlined" Required="true" OnBlur="LookupAsync"
+                      HelperText="Fee reminders and receipts go to this number" />
+    </MudItem>
+
+    @if (Model.LinkedGuardianId is not null)
+    {
+        <MudItem xs="12">
+            <MudAlert Severity="Severity.Success" Dense="true">
+                Linked to existing guardian <strong>@Model.LinkedGuardianName</strong>.
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="Unlink">Add a new guardian instead</MudButton>
+            </MudAlert>
+        </MudItem>
+    }
+    else
+    {
+        @if (Model.Matches.Count > 0)
+        {
+            <MudItem xs="12">
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    This number is already registered. Is this a sibling?
+                    @foreach (var match in Model.Matches)
+                    {
+                        <div class="d-flex align-center gap-2 mt-1">
+                            <span>
+                                <strong>@match.FullName</strong>
+                                @if (match.Children.Count > 0)
+                                {
+                                    <span> – parent of @string.Join(", ", match.Children)</span>
+                                }
+                            </span>
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="() => Link(match)">Link</MudButton>
+                        </div>
+                    }
+                </MudAlert>
+            </MudItem>
+        }
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="Model.FullName" Label="Guardian name" Variant="Variant.Outlined" Required="true" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudSelect T="GuardianRelation" @bind-Value="Model.Relation" Label="Relation" Variant="Variant.Outlined">
+                @foreach (var relation in Enum.GetValues<GuardianRelation>())
+                {
+                    <MudSelectItem T="GuardianRelation" Value="relation">@relation</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="Model.AltPhone" Label="Other phone (optional)" InputType="InputType.Telephone" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12" sm="6">
+            <MudTextField @bind-Value="Model.Email" Label="Email (optional)" InputType="InputType.Email" Variant="Variant.Outlined" />
+        </MudItem>
+        <MudItem xs="12">
+            <MudCheckBox T="bool" @bind-Value="Model.WhatsAppOptIn" Color="Color.Primary"
+                         Label="Guardian agrees to receive fee reminders and receipts on WhatsApp" />
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    [Parameter, EditorRequired] public GuardianFormModel Model { get; set; } = default!;
+
+    /// <summary>Turn off when editing an existing guardian.</summary>
+    [Parameter] public bool AllowLinking { get; set; } = true;
+
+    private async Task LookupAsync()
+    {
+        if (!AllowLinking || Model.LinkedGuardianId is not null) return;
+        if (PhoneNumber.Normalize(Model.Phone) is not { } normalized || normalized == Model.LastLookedUpPhone) return;
+
+        Model.LastLookedUpPhone = normalized;
+        Model.Matches = await Students.FindGuardiansByPhoneAsync(normalized);
+    }
+
+    private void Link(GuardianMatch match)
+    {
+        Model.LinkedGuardianId = match.Id;
+        Model.LinkedGuardianName = match.FullName;
+        Model.Phone = PhoneNumber.Format(match.Phone);
+    }
+
+    private void Unlink()
+    {
+        Model.LinkedGuardianId = null;
+        Model.LinkedGuardianName = null;
+        Model.Matches = [];
+    }
+}

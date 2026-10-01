@@ -1,0 +1,204 @@
+@page "/fees/plans"
+@attribute [Authorize(Policy = Policies.ManageBatches)]
+
+@using InstituteHub.Application.Fees
+@using InstituteHub.Domain.Fees
+
+@inject FeePlanService FeePlansSer
+@inject ISnackbar Snackbar
+
+<PageTitle>Fee plans – InstituteHub</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+    <MudText Typo="Typo.h5">Fee plans</MudText>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+        <MudSwitch T="bool" Value="_showInactive" ValueChanged="OnShowInactiveChanged" Label="Show inactive" Color="Color.Primary" />
+        @if (_editing is null)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="StartNew">New fee plan</MudButton>
+        }
+    </MudStack>
+</MudStack>
+
+@if (_editing is not null)
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">@(_editingId is null ? "New fee plan" : "Edit fee plan")</MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_editing.Name" Label="Plan name" Placeholder="e.g. JEE 2-year – 4 instalments"
+                              Variant="Variant.Outlined" Required="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="BillingType" @bind-Value="_editing.BillingType" Label="How is the fee paid?" Variant="Variant.Outlined">
+                    <MudSelectItem T="BillingType" Value="BillingType.OneTime">One-time</MudSelectItem>
+                    <MudSelectItem T="BillingType" Value="BillingType.Instalments">Instalments</MudSelectItem>
+                    <MudSelectItem T="BillingType" Value="BillingType.Monthly">Monthly</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+
+            @if (_editing.BillingType == BillingType.Monthly)
+            {
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="decimal?" @bind-Value="_editing.MonthlyAmount" Label="Monthly fee (₹)" Min="0" Format="N0" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+            else
+            {
+                <MudItem xs="12" sm="6">
+                    <MudNumericField T="decimal" @bind-Value="_editing.TotalAmount" Label="Total fee (₹)" Min="0" Format="N0" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+
+            @if (_editing.BillingType == BillingType.Instalments)
+            {
+                <MudItem xs="6" sm="3">
+                    <MudNumericField T="short?" @bind-Value="_editing.InstalmentCount" Label="Instalments" Min="2" Max="24" Variant="Variant.Outlined" />
+                </MudItem>
+                <MudItem xs="6" sm="3">
+                    <MudNumericField T="short?" @bind-Value="_editing.IntervalMonths" Label="Months between" Min="1" Max="12" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+
+            @if (_editing.BillingType != BillingType.OneTime)
+            {
+                <MudItem xs="6" sm="3">
+                    <MudNumericField T="short" @bind-Value="_editing.DueDay" Label="Due day of month" Min="1" Max="28" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudText Typo="Typo.body2" Class="mt-3">Summary: <strong>@Summary</strong></MudText>
+
+        <ErrorSummary Errors="_errors" />
+
+        <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mt-2">
+            <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_saving" OnClick="SaveAsync">Save</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+<MudTable T="FeePlanItem" Items="_plans" Loading="_plans is null" Dense="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Fee</MudTh>
+        <MudTh>Due day</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name"><strong>@context.Name</strong></MudTd>
+        <MudTd DataLabel="Fee">@context.Summary</MudTd>
+        <MudTd DataLabel="Due day">@(context.BillingType == BillingType.OneTime ? "On joining" : $"{context.DueDayOfMonth} of the month")</MudTd>
+        <MudTd DataLabel="Status">@(context.IsActive ? "Active" : "Inactive")</MudTd>
+        <MudTd>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => StartEdit(context)">Edit</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => ToggleActiveAsync(context)">
+                @(context.IsActive ? "Deactivate" : "Activate")
+            </MudButton>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4">No fee plans yet. Create one, e.g. "Class 12 – ₹40,000 in 4 instalments".</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+<MudText Typo="Typo.caption" Class="mt-2 d-block">
+    Changing a plan does not change dues already created for students. Due generation arrives in week 5.
+</MudText>
+
+@code {
+    private IReadOnlyList<FeePlanItem>? _plans;
+    private bool _showInactive;
+    private PlanModel? _editing;
+    private Guid? _editingId;
+    private IReadOnlyList<Error>? _errors;
+    private bool _saving;
+
+    private string Summary => _editing is null ? "" :
+        FeePlanSummary.Describe(_editing.BillingType, _editing.TotalAmount, _editing.MonthlyAmount, _editing.InstalmentCount);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync() => _plans = await FeePlansSer.ListAsync(_showInactive);
+
+    private async Task OnShowInactiveChanged(bool value)
+    {
+        _showInactive = value;
+        await LoadAsync();
+    }
+
+    private void StartNew()
+    {
+        _editingId = null;
+        _editing = new PlanModel();
+        _errors = null;
+    }
+
+    private void StartEdit(FeePlanItem p)
+    {
+        _editingId = p.Id;
+        _editing = new PlanModel
+        {
+            Name = p.Name,
+            BillingType = p.BillingType,
+            TotalAmount = p.TotalAmount,
+            MonthlyAmount = p.MonthlyAmount,
+            InstalmentCount = p.InstalmentCount,
+            IntervalMonths = p.InstalmentIntervalMonths ?? 1,
+            DueDay = p.DueDayOfMonth,
+        };
+        _errors = null;
+    }
+
+    private void Cancel()
+    {
+        _editing = null;
+        _editingId = null;
+        _errors = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_editing is null) return;
+        _saving = true;
+
+        var request = new FeePlanRequest(_editing.Name, _editing.BillingType, _editing.TotalAmount, _editing.MonthlyAmount,
+            _editing.InstalmentCount, _editing.IntervalMonths, _editing.DueDay);
+
+        Result result = _editingId is { } id
+            ? await FeePlansSer.UpdateAsync(id, request)
+            : await FeePlansSer.CreateAsync(request);
+
+        _saving = false;
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsFailure) return;
+
+        Snackbar.Add("Fee plan saved.", Severity.Success);
+        Cancel();
+        await LoadAsync();
+    }
+
+    private async Task ToggleActiveAsync(FeePlanItem p)
+    {
+        var result = await FeePlansSer.SetActiveAsync(p.Id, !p.IsActive);
+        if (result.IsFailure)
+        {
+            Snackbar.Add(result.FirstError?.Message ?? "Could not update the plan.", Severity.Error);
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private sealed class PlanModel
+    {
+        public string Name { get; set; } = "";
+        public BillingType BillingType { get; set; } = BillingType.Instalments;
+        public decimal TotalAmount { get; set; }
+        public decimal? MonthlyAmount { get; set; }
+        public short? InstalmentCount { get; set; } = 4;
+        public short? IntervalMonths { get; set; } = 1;
+        public short DueDay { get; set; } = 5;
+    }
+}

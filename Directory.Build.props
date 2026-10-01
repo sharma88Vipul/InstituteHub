@@ -1,0 +1,15 @@
+<Project>
+  <!-- Shared settings for every project in the solution (design doc, section 3). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- NuGet vulnerability audit warnings stay visible but do not break the build. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1901;NU1902;NU1903;NU1904</WarningsNotAsErrors>
+    <!-- Pin every resolved package version in packages.lock.json (commit these files). -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+</Project>

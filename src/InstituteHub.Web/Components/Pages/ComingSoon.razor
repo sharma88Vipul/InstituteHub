@@ -1,0 +1,44 @@
+@page "/attendance"
+@page "/fees/dues"
+@page "/payments"
+@page "/reminders"
+@page "/reports"
+@page "/settings"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+@inject NavigationManager Navigation
+
+@* Placeholder for modules scheduled in later weeks (design doc section 8). Each route moves to
+   its own page under Features/ as the module is built. *@
+
+<PageTitle>Coming soon – InstituteHub</PageTitle>
+
+<MudPaper Class="pa-6 mt-2" Outlined="true">
+    <MudStack AlignItems="AlignItems.Center" Spacing="2">
+        <MudIcon Icon="@Icons.Material.Filled.Construction" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h6">@_title is coming soon</MudText>
+        <MudText Typo="Typo.body2" Align="Align.Center">@_when</MudText>
+        <MudButton Href="dashboard" Variant="Variant.Text" Color="Color.Primary">Back to dashboard</MudButton>
+    </MudStack>
+</MudPaper>
+
+@code {
+    private string _title = "";
+    private string _when = "";
+
+    protected override void OnParametersSet()
+    {
+        var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+        (_title, _when) = path switch
+        {
+            "attendance" => ("Attendance", "Mobile attendance marking arrives in week 4."),
+            "fees/dues" => ("Pending dues", "The dues list arrives in week 6."),
+            "payments" => ("Payments", "Fee collection and receipts arrive in week 6."),
+            "reminders" => ("Reminders", "WhatsApp/SMS reminders arrive in week 7."),
+            "reports" => ("Reports", "Reports arrive in week 8."),
+            "settings" => ("Settings", "Institute profile, logo and users arrive in week 8."),
+            _ => ("This page", "It is on the build plan."),
+        };
+    }
+}

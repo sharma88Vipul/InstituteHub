@@ -1,0 +1,72 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                       OnClick="ToggleDrawer" aria-label="Open menu" />
+        <MudLink Href="dashboard" Color="Color.Inherit" Underline="Underline.None" Class="ml-2">
+            <MudText Typo="Typo.h6">InstituteHub</MudText>
+        </MudLink>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                <MudText Typo="Typo.body2" Class="d-none d-sm-flex mr-1">
+                    @(context.User.FindFirst("full_name")?.Value ?? context.User.Identity?.Name)
+                </MudText>
+                <MudIconButton Href="Account/Manage" Icon="@Icons.Material.Filled.AccountCircle"
+                               Color="Color.Inherit" aria-label="My account" />
+                <form action="Account/Logout" method="post" class="d-inline">
+                    <AntiforgeryToken />
+                    <input type="hidden" name="ReturnUrl" value="" />
+                    <MudIconButton ButtonType="ButtonType.Submit" Icon="@Icons.Material.Filled.Logout"
+                                   Color="Color.Inherit" aria-label="Log out" />
+                </form>
+            </Authorized>
+            <NotAuthorized>
+                <MudButton Href="Account/Login" Color="Color.Inherit">Log in</MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Variant="@DrawerVariant.Responsive"
+               Breakpoint="Breakpoint.Md" Elevation="1">
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="py-4 px-3 px-sm-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1E5AA8",
+            AppbarBackground = "#1E5AA8",
+            Background = "#F5F7FB",
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "8px",
+        },
+    };
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+}

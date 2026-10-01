@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\InstituteHub.Application\InstituteHub.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" PrivateAssets="all" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.*" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.*" />
+    <PackageReference Include="Hangfire.AspNetCore" Version="1.8.*" />
+    <PackageReference Include="Hangfire.PostgreSql" Version="1.*" />
+    <PackageReference Include="QuestPDF" Version="*" />
+  </ItemGroup>
+
+</Project>

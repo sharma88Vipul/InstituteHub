@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\InstituteHub.Domain\InstituteHub.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageReference Include="FluentValidation" Version="12.*" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.*" />
+    <PackageReference Include="SetNet.Persistence.EfCore" Version="1.2.0" />
+  </ItemGroup>
+
+</Project>

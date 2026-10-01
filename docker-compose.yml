@@ -1,0 +1,39 @@
+# Local development services: PostgreSQL + Seq.
+#   docker compose up -d
+# Postgres: localhost:5432 (db institutehub, user/password institutehub)
+# Seq UI:   http://localhost:5341
+services:
+  postgres:
+    image: postgres:16
+    container_name: institutehub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: institutehub
+      POSTGRES_USER: institutehub
+      POSTGRES_PASSWORD: institutehub_dev
+      TZ: UTC
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U institutehub -d institutehub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  seq:
+    image: datalust/seq:latest
+    container_name: institutehub-seq
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_NOAUTHENTICATION: "true"   # dev only
+    ports:
+      - "5341:80"
+    volumes:
+      - seqdata:/data
+
+volumes:
+  pgdata:
+  seqdata:

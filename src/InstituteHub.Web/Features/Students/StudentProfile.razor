@@ -1,0 +1,339 @@
+@page "/students/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ViewStudents)]
+
+@using InstituteHub.Application.Batches
+@using InstituteHub.Application.Fees
+@using InstituteHub.Application.Students
+@using InstituteHub.Domain.Batches
+@using InstituteHub.Domain.Students
+
+@inject StudentService Students
+@inject EnrollmentService Enrollments
+@inject BatchService Batches
+@inject FeePlanService FeePlans
+@inject ISnackbar Snackbar
+
+<PageTitle>@(_student?.FullName ?? "Student") – InstituteHub</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_student is null)
+{
+    <MudAlert Severity="Severity.Warning">Student not found. <MudLink Href="students">Back to students</MudLink></MudAlert>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+        <div>
+            <MudText Typo="Typo.h5">@_student.FullName</MudText>
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Size="Size.Small">@_student.AdmissionNo</MudChip>
+                <MudChip T="string" Size="Size.Small" Color="@StudentList.StatusColor(_student.Status)">@_student.Status</MudChip>
+                @if (_student.ClassGrade is { } grade)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@grade</MudChip>
+                }
+            </MudStack>
+        </div>
+        <AuthorizeView Policy="@Policies.ManageStudents">
+            <MudStack Row="true" Spacing="1">
+                <MudButton Href="@($"students/{Id}/edit")" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit">Edit</MudButton>
+                <MudMenu Label="Status" Variant="Variant.Outlined" EndIcon="@Icons.Material.Filled.ArrowDropDown">
+                    @foreach (var status in Enum.GetValues<StudentStatus>().Where(s => s != _student.Status))
+                    {
+                        <MudMenuItem OnClick="() => SetStatusAsync(status)">Mark as @status</MudMenuItem>
+                    }
+                </MudMenu>
+            </MudStack>
+        </AuthorizeView>
+    </MudStack>
+
+    <ErrorSummary Errors="_errors" />
+
+    <MudTabs Outlined="true" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+        <MudTabPanel Text="Profile">
+            <MudSimpleTable Dense="true" Elevation="0">
+                <tbody>
+                    <tr><td class="mud-text-secondary">Admission no.</td><td>@_student.AdmissionNo</td></tr>
+                    <tr><td class="mud-text-secondary">Admission date</td><td>@_student.AdmissionDate.ToString("dd MMM yyyy")</td></tr>
+                    <tr><td class="mud-text-secondary">Gender</td><td>@_student.Gender</td></tr>
+                    <tr><td class="mud-text-secondary">Date of birth</td><td>@_student.DateOfBirth?.ToString("dd MMM yyyy")</td></tr>
+                    <tr><td class="mud-text-secondary">Class</td><td>@_student.ClassGrade</td></tr>
+                    <tr><td class="mud-text-secondary">School</td><td>@_student.SchoolName</td></tr>
+                    <tr><td class="mud-text-secondary">Phone</td><td>@PhoneNumber.Format(_student.Phone)</td></tr>
+                    <tr><td class="mud-text-secondary">Address</td><td>@_student.Address</td></tr>
+                    <tr><td class="mud-text-secondary">Notes</td><td>@_student.Notes</td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Guardians" BadgeData="@_student.Guardians.Count">
+            @foreach (var g in _student.Guardians)
+            {
+                <MudPaper Outlined="true" Class="pa-3 mb-2">
+                    @if (_editingGuardianId == g.Id && _editGuardian is not null)
+                    {
+                        <GuardianFields Model="_editGuardian" AllowLinking="false" />
+                        <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                            <MudButton Variant="Variant.Text" OnClick="() => _editingGuardianId = null">Cancel</MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="() => SaveGuardianAsync(g.Id)">Save</MudButton>
+                        </MudStack>
+                    }
+                    else
+                    {
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Wrap="Wrap.Wrap">
+                            <div>
+                                <MudText Typo="Typo.subtitle1">
+                                    @g.FullName <span class="mud-text-secondary">(@g.Relation)</span>
+                                </MudText>
+                                <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" Class="my-1">
+                                    @if (g.IsPrimary)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Primary">Primary</MudChip>
+                                    }
+                                    <MudChip T="string" Size="Size.Small" Color="@(g.WhatsAppOptIn ? Color.Success : Color.Default)">
+                                        @(g.WhatsAppOptIn ? "WhatsApp: yes" : "WhatsApp: no")
+                                    </MudChip>
+                                </MudStack>
+                                <MudText Typo="Typo.body2">
+                                    <MudLink Href="@($"tel:{g.Phone}")">@PhoneNumber.Format(g.Phone)</MudLink>
+                                    · <MudLink Href="@PhoneNumber.WhatsAppLink(g.Phone)" Target="_blank">WhatsApp</MudLink>
+                                </MudText>
+                                @if (g.AltPhone is { } alt)
+                                {
+                                    <MudText Typo="Typo.body2">Other: @PhoneNumber.Format(alt)</MudText>
+                                }
+                                @if (g.Email is { } email)
+                                {
+                                    <MudText Typo="Typo.body2">@email</MudText>
+                                }
+                                @if (g.OtherChildren.Count > 0)
+                                {
+                                    <MudText Typo="Typo.caption">Also guardian of @string.Join(", ", g.OtherChildren)</MudText>
+                                }
+                            </div>
+                            <AuthorizeView Policy="@Policies.ManageStudents" Context="auth">
+                                <MudStack Row="true" Spacing="1">
+                                    @if (!g.IsPrimary)
+                                    {
+                                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => MakePrimaryAsync(g.Id)">Make primary</MudButton>
+                                    }
+                                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => StartEditGuardian(g)">Edit</MudButton>
+                                </MudStack>
+                            </AuthorizeView>
+                        </MudStack>
+                    }
+                </MudPaper>
+            }
+
+            <AuthorizeView Policy="@Policies.ManageStudents" Context="auth">
+                @if (_newGuardian is null)
+                {
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Add" OnClick="() => _newGuardian = new()">
+                        Add guardian
+                    </MudButton>
+                }
+                else
+                {
+                    <MudPaper Outlined="true" Class="pa-3">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">New guardian</MudText>
+                        <GuardianFields Model="_newGuardian" />
+                        <MudCheckBox T="bool" @bind-Value="_newGuardianPrimary" Label="Make this the primary guardian (receives reminders)" />
+                        <MudStack Row="true" Justify="Justify.FlexEnd">
+                            <MudButton Variant="Variant.Text" OnClick="() => _newGuardian = null">Cancel</MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AddGuardianAsync">Add</MudButton>
+                        </MudStack>
+                    </MudPaper>
+                }
+            </AuthorizeView>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Batches" BadgeData="@_student.Enrollments.Count(e => e.Status == EnrollmentStatus.Active)">
+            @if (_student.Enrollments.Count == 0)
+            {
+                <MudText Class="mb-3">Not in any batch yet.</MudText>
+            }
+            else
+            {
+                <MudTable T="EnrollmentSummary" Items="_student.Enrollments" Dense="true" Elevation="0" Breakpoint="Breakpoint.Sm" Class="mb-3">
+                    <HeaderContent>
+                        <MudTh>Batch</MudTh>
+                        <MudTh>Fee plan</MudTh>
+                        <MudTh>Joined</MudTh>
+                        <MudTh>Discount</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Batch"><MudLink Href="@($"batches/{context.BatchId}")">@context.BatchName</MudLink></MudTd>
+                        <MudTd DataLabel="Fee plan">@context.FeePlanName</MudTd>
+                        <MudTd DataLabel="Joined">@context.EnrolledOn.ToString("dd MMM yyyy")</MudTd>
+                        <MudTd DataLabel="Discount">@Money.Format(context.DiscountAmount)</MudTd>
+                        <MudTd DataLabel="Status">
+                            @context.Status
+                            @if (context.EndedOn is { } ended)
+                            {
+                                <span class="mud-text-secondary"> (@ended.ToString("dd MMM yyyy"))</span>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            @if (context.Status == EnrollmentStatus.Active)
+                            {
+                                <AuthorizeView Policy="@Policies.ManageStudents" Context="auth">
+                                    <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                                               OnClick="() => DropAsync(context.Id)">Remove</MudButton>
+                                </AuthorizeView>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            @if (_student.Status == StudentStatus.Active)
+            {
+                <AuthorizeView Policy="@Policies.ManageStudents" Context="auth">
+                    <MudPaper Outlined="true" Class="pa-3">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Add to a batch</MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" sm="5">
+                                <MudSelect T="Guid?" Value="_enrollBatchId" ValueChanged="OnEnrollBatchChanged" Label="Batch" Variant="Variant.Outlined">
+                                    @foreach (var batch in _batches)
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@((Guid?)batch.Id)">@batch.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="4">
+                                <MudSelect T="Guid?" @bind-Value="_enrollPlanId" Label="Fee plan" Variant="Variant.Outlined">
+                                    @foreach (var plan in _plans)
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@((Guid?)plan.Id)">@plan.Name – @plan.Summary</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="3">
+                                <MudNumericField T="decimal" @bind-Value="_enrollDiscount" Label="Discount (₹)" Min="0" Variant="Variant.Outlined" Format="N0" />
+                            </MudItem>
+                        </MudGrid>
+                        <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_enrollBatchId is null" OnClick="EnrollAsync">Add to batch</MudButton>
+                        </MudStack>
+                    </MudPaper>
+                </AuthorizeView>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Fees">
+            <MudAlert Severity="Severity.Info" Dense="true">Fee dues and payments for this student arrive with the Fees module (weeks 5–6).</MudAlert>
+        </MudTabPanel>
+        <MudTabPanel Text="Attendance">
+            <MudAlert Severity="Severity.Info" Dense="true">Attendance history arrives in week 4.</MudAlert>
+        </MudTabPanel>
+        <MudTabPanel Text="Messages">
+            <MudAlert Severity="Severity.Info" Dense="true">WhatsApp/SMS history arrives in week 7.</MudAlert>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private StudentDetails? _student;
+    private IReadOnlyList<Error>? _errors;
+
+    private IReadOnlyList<BatchOption> _batches = [];
+    private IReadOnlyList<FeePlanOption> _plans = [];
+    private Guid? _enrollBatchId;
+    private Guid? _enrollPlanId;
+    private decimal _enrollDiscount;
+
+    private Guid? _editingGuardianId;
+    private GuardianFormModel? _editGuardian;
+    private GuardianFormModel? _newGuardian;
+    private bool _newGuardianPrimary;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        await ReloadAsync();
+        _batches = await Batches.GetOptionsAsync();
+        _plans = await FeePlans.GetOptionsAsync();
+        _loading = false;
+    }
+
+    private async Task ReloadAsync() => _student = await Students.GetAsync(Id);
+
+    private async Task<bool> HandleAsync(Result result, string successMessage)
+    {
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsFailure) return false;
+
+        Snackbar.Add(successMessage, Severity.Success);
+        await ReloadAsync();
+        return true;
+    }
+
+    private async Task SetStatusAsync(StudentStatus status) =>
+        await HandleAsync(await Students.SetStatusAsync(Id, status), $"Marked as {status}.");
+
+    private void StartEditGuardian(GuardianSummary g)
+    {
+        _editingGuardianId = g.Id;
+        _editGuardian = GuardianFormModel.From(g);
+    }
+
+    private async Task SaveGuardianAsync(Guid guardianId)
+    {
+        if (_editGuardian is null) return;
+        if (await HandleAsync(await Students.UpdateGuardianAsync(guardianId, _editGuardian.ToInput()), "Guardian updated."))
+        {
+            _editingGuardianId = null;
+            _editGuardian = null;
+        }
+    }
+
+    private async Task MakePrimaryAsync(Guid guardianId) =>
+        await HandleAsync(await Students.SetPrimaryGuardianAsync(Id, guardianId), "Primary guardian changed.");
+
+    private async Task AddGuardianAsync()
+    {
+        if (_newGuardian is null) return;
+        var result = await Students.AddGuardianAsync(
+            Id,
+            _newGuardian.LinkedGuardianId,
+            _newGuardian.LinkedGuardianId is null ? _newGuardian.ToInput() : null,
+            _newGuardianPrimary);
+
+        if (await HandleAsync(result, "Guardian added."))
+        {
+            _newGuardian = null;
+            _newGuardianPrimary = false;
+        }
+    }
+
+    private void OnEnrollBatchChanged(Guid? batchId)
+    {
+        _enrollBatchId = batchId;
+        _enrollPlanId = _batches.FirstOrDefault(b => b.Id == batchId)?.DefaultFeePlanId;
+    }
+
+    private async Task EnrollAsync()
+    {
+        if (_enrollBatchId is not { } batchId) return;
+        var result = await Enrollments.EnrollAsync(new EnrollRequest(Id, batchId, _enrollPlanId, _enrollDiscount));
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsFailure) return;
+
+        Snackbar.Add("Added to batch.", Severity.Success);
+        _enrollBatchId = null;
+        _enrollPlanId = null;
+        _enrollDiscount = 0;
+        await ReloadAsync();
+    }
+
+    private async Task DropAsync(Guid enrollmentId) =>
+        await HandleAsync(await Enrollments.DropAsync(enrollmentId), "Removed from batch.");
+}

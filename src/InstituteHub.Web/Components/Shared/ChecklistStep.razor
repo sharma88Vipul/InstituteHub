@@ -1,0 +1,23 @@
+@* One row of the onboarding checklist. *@
+
+<MudListItem T="string" Href="@(Done ? null : Href)">
+    <div class="d-flex align-center gap-3 py-1">
+        <MudIcon Icon="@(Done ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.Circle)"
+                 Color="@(Done ? Color.Success : Color.Default)" />
+        <div class="flex-grow-1">
+            <MudText Typo="Typo.subtitle2" Style="@(Done ? "text-decoration: line-through;" : null)">@Title</MudText>
+            <MudText Typo="Typo.caption">@Detail</MudText>
+        </div>
+        @if (!Done)
+        {
+            <MudIcon Icon="@Icons.Material.Filled.ChevronRight" />
+        }
+    </div>
+</MudListItem>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Detail { get; set; }
+    [Parameter] public string? Href { get; set; }
+    [Parameter] public bool Done { get; set; }
+}

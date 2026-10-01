@@ -1,0 +1,131 @@
+@page "/batches/{Id:guid}"
+@attribute [Authorize(Policy = Policies.ViewStudents)]
+
+@using InstituteHub.Application.Batches
+@* This page is itself named BatchDetails, so the DTO of the same name gets an alias. *@
+@using BatchInfo = InstituteHub.Application.Batches.BatchDetails
+
+@inject BatchService Batches
+@inject EnrollmentService Enrollments
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@(_batch?.Name ?? "Batch") – InstituteHub</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_batch is null)
+{
+    <MudAlert Severity="Severity.Warning">Batch not found. <MudLink Href="batches">Back to batches</MudLink></MudAlert>
+}
+else
+{
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+        <div>
+            <MudText Typo="Typo.h5">@_batch.Name</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">@_batch.Subject</MudText>
+        </div>
+        <AuthorizeView Policy="@Policies.ManageBatches">
+            <MudStack Row="true" Spacing="1">
+                <MudButton Href="@($"batches/{Id}/edit")" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit">Edit</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="ToggleActiveAsync">@(_batch.IsActive ? "Deactivate" : "Activate")</MudButton>
+            </MudStack>
+        </AuthorizeView>
+    </MudStack>
+
+    <ErrorSummary Errors="_errors" />
+
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Schedule</MudText><MudText>@_batch.Schedule</MudText></MudItem>
+            <MudItem xs="12" sm="6"><MudText Typo="Typo.caption">Teacher</MudText><MudText>@(_batch.TeacherName ?? "Not assigned")</MudText></MudItem>
+            <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Starts</MudText><MudText>@_batch.StartDate.ToString("dd MMM yyyy")</MudText></MudItem>
+            <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Ends</MudText><MudText>@(_batch.EndDate?.ToString("dd MMM yyyy") ?? "-")</MudText></MudItem>
+            <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Students</MudText><MudText>@(_batch.Capacity is { } cap ? $"{_batch.Students.Count} / {cap}" : _batch.Students.Count.ToString())</MudText></MudItem>
+            <MudItem xs="6" sm="3"><MudText Typo="Typo.caption">Default fee plan</MudText><MudText>@(_batch.DefaultFeePlanName ?? "-")</MudText></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+        <MudText Typo="Typo.h6">Students</MudText>
+        <AuthorizeView Policy="@Policies.ManageStudents">
+            @if (_batch.IsActive)
+            {
+                <MudButton Href="@($"students/new?batch={Id}")" Variant="Variant.Text" Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.PersonAdd">Admit into this batch</MudButton>
+            }
+        </AuthorizeView>
+    </MudStack>
+
+    <MudTable T="BatchStudent" Items="_batch.Students" Dense="true" Hover="true" Elevation="0" Outlined="true"
+              Breakpoint="Breakpoint.Sm" OnRowClick="OpenStudent" RowStyle="cursor: pointer;">
+        <HeaderContent>
+            <MudTh>Adm. no</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>Guardian phone</MudTh>
+            <MudTh>Joined</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Adm. no">@context.AdmissionNo</MudTd>
+            <MudTd DataLabel="Name"><strong>@context.FullName</strong></MudTd>
+            <MudTd DataLabel="Guardian phone">@PhoneNumber.Format(context.GuardianPhone)</MudTd>
+            <MudTd DataLabel="Joined">@context.EnrolledOn.ToString("dd MMM yyyy")</MudTd>
+            <MudTd>
+                <AuthorizeView Policy="@Policies.ManageStudents" Context="auth">
+                    <span @onclick:stopPropagation="true">
+                        <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text"
+                                   OnClick="() => DropAsync(context)">Remove</MudButton>
+                    </span>
+                </AuthorizeView>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Class="pa-4">No students in this batch yet.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private BatchInfo? _batch;
+    private IReadOnlyList<Error>? _errors;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _batch = await Batches.GetAsync(Id);
+        _loading = false;
+    }
+
+    private void OpenStudent(TableRowClickEventArgs<BatchStudent> args)
+    {
+        if (args.Item is { } student) Navigation.NavigateTo($"students/{student.StudentId}");
+    }
+
+    private async Task ToggleActiveAsync()
+    {
+        if (_batch is null) return;
+        var result = await Batches.SetActiveAsync(Id, !_batch.IsActive);
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add(_batch.IsActive ? "Batch deactivated." : "Batch activated.", Severity.Success);
+            _batch = await Batches.GetAsync(Id);
+        }
+    }
+
+    private async Task DropAsync(BatchStudent student)
+    {
+        var result = await Enrollments.DropAsync(student.EnrollmentId);
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add($"{student.FullName} removed from the batch.", Severity.Success);
+            _batch = await Batches.GetAsync(Id);
+        }
+    }
+}

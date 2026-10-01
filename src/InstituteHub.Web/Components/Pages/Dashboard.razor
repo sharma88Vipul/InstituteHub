@@ -1,0 +1,98 @@
+@page "/dashboard"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+
+@using InstituteHub.Application.Tenants
+@using InstituteHub.Domain.Tenants
+
+@inject TenantService Tenants
+
+<PageTitle>Dashboard – InstituteHub</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_tenant is null)
+{
+    <MudAlert Severity="Severity.Warning">
+        Your account is not linked to an institute. <MudLink Href="signup">Sign up your institute</MudLink>
+        or ask your institute owner to invite you.
+    </MudAlert>
+}
+else
+{
+    <MudText Typo="Typo.h5" GutterBottom="true">@_tenant.Name</MudText>
+
+    @if (_tenant.Status == TenantStatus.Trial && _tenant.TrialDaysLeft is { } days)
+    {
+        <MudAlert Severity="@(days <= 3 ? Severity.Warning : Severity.Info)" Dense="true" Class="mb-4">
+            Free trial: @days @(days == 1 ? "day" : "days") left on the @(_tenant.PlanName ?? "trial") plan.
+        </MudAlert>
+    }
+
+    @if (_checklist is { IsComplete: false } checklist)
+    {
+        <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+                <div>
+                    <MudText Typo="Typo.subtitle1">Finish setting up your institute</MudText>
+                    <MudText Typo="Typo.body2">@checklist.CompletedSteps of @checklist.TotalSteps steps done</MudText>
+                </div>
+                <MudButton Href="onboarding" Variant="Variant.Filled" Color="Color.Primary">Continue setup</MudButton>
+            </MudStack>
+            <MudProgressLinear Value="@(100.0 * checklist.CompletedSteps / checklist.TotalSteps)" Color="Color.Primary" Class="mt-3" Rounded="true" />
+        </MudPaper>
+    }
+
+    @* Collection figures arrive with the Fees module (weeks 5–6) and full dashboard (week 8). *@
+    <MudGrid Spacing="2">
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.caption">Active students</MudText>
+                <MudText Typo="Typo.h5">@(_checklist?.StudentCount ?? 0)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.caption">Today's collection</MudText>
+                <MudText Typo="Typo.h5">₹0</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.caption">This month</MudText>
+                <MudText Typo="Typo.h5">₹0</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" md="3">
+            <MudPaper Class="pa-4" Outlined="true">
+                <MudText Typo="Typo.caption">Pending dues</MudText>
+                <MudText Typo="Typo.h5">₹0</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudText Typo="Typo.subtitle1" Class="mt-6 mb-2">Quick actions</MudText>
+    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
+        <MudButton Href="students/new" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PersonAdd">Admit student</MudButton>
+        <MudButton Href="payments" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CurrencyRupee">Collect fee</MudButton>
+        <MudButton Href="attendance" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FactCheck">Mark attendance</MudButton>
+    </MudStack>
+}
+
+@code {
+    private bool _loading = true;
+    private TenantSummary? _tenant;
+    private OnboardingChecklist? _checklist;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tenant = await Tenants.GetCurrentAsync();
+        if (_tenant is not null)
+        {
+            _checklist = await Tenants.GetOnboardingChecklistAsync();
+        }
+        _loading = false;
+    }
+}

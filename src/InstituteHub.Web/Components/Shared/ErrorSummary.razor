@@ -1,0 +1,24 @@
+@* Shows the errors of a failed Result in plain language. *@
+
+@if (Errors is { Count: > 0 })
+{
+    <MudAlert Severity="Severity.Error" Class="my-3">
+        @if (Errors.Count == 1)
+        {
+            @Errors[0].Message
+        }
+        else
+        {
+            <ul class="mb-0 ps-3">
+                @foreach (var error in Errors)
+                {
+                    <li>@error.Message</li>
+                }
+            </ul>
+        }
+    </MudAlert>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<InstituteHub.Application.Common.Error>? Errors { get; set; }
+}

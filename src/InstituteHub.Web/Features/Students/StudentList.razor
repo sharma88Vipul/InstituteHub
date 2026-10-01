@@ -1,0 +1,157 @@
+@page "/students"
+@attribute [Authorize(Policy = Policies.ViewStudents)]
+
+@using InstituteHub.Application.Batches
+@using InstituteHub.Application.Students
+@using InstituteHub.Domain.Students
+
+@inject StudentService Students
+@inject BatchService Batches
+@inject NavigationManager Navigation
+
+<PageTitle>Students – InstituteHub</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+    <MudText Typo="Typo.h5">Students</MudText>
+    <AuthorizeView Policy="@Policies.ManageStudents">
+        <MudButton Href="students/new" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.PersonAdd">Admit student</MudButton>
+    </AuthorizeView>
+</MudStack>
+
+<MudGrid Spacing="2" Class="mb-2">
+    <MudItem xs="12" md="6">
+        <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" Immediate="true" DebounceInterval="400"
+                      Placeholder="Search by name, admission no. or phone" Clearable="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="6" md="3">
+        <MudSelect T="StudentStatus?" Value="_status" ValueChanged="OnStatusChanged" Label="Status"
+                   Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="StudentStatus?" Value="@((StudentStatus?)null)">All</MudSelectItem>
+            @foreach (var status in Enum.GetValues<StudentStatus>())
+            {
+                <MudSelectItem T="StudentStatus?" Value="@((StudentStatus?)status)">@status</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" md="3">
+        <MudSelect T="Guid?" Value="_batchId" ValueChanged="OnBatchChanged" Label="Batch"
+                   Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">All batches</MudSelectItem>
+            @foreach (var batch in _batches)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)batch.Id)">@batch.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+</MudGrid>
+
+<MudTable T="StudentListItem" Items="_result?.Items" Loading="_loading" Hover="true" Dense="true"
+          Breakpoint="Breakpoint.Sm" Elevation="0" Outlined="true" OnRowClick="OpenStudent" RowStyle="cursor: pointer;">
+    <HeaderContent>
+        <MudTh>Adm. no</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Class</MudTh>
+        <MudTh>Guardian</MudTh>
+        <MudTh>Batches</MudTh>
+        <MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Adm. no">@context.AdmissionNo</MudTd>
+        <MudTd DataLabel="Name"><strong>@context.FullName</strong></MudTd>
+        <MudTd DataLabel="Class">@context.ClassGrade</MudTd>
+        <MudTd DataLabel="Guardian">
+            @context.GuardianName
+            @if (context.GuardianPhone is { } phone)
+            {
+                <div class="mud-text-secondary" style="font-size: .8rem;">@PhoneNumber.Format(phone)</div>
+            }
+        </MudTd>
+        <MudTd DataLabel="Batches">@string.Join(", ", context.Batches)</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Size="Size.Small" Color="@StatusColor(context.Status)">@context.Status</MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4">No students found.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@if (_result is { TotalPages: > 1 })
+{
+    <div class="d-flex justify-center mt-3">
+        <MudPagination Count="_result.TotalPages" Selected="_page" SelectedChanged="OnPageChanged" Color="Color.Primary" />
+    </div>
+}
+@if (_result is not null)
+{
+    <MudText Typo="Typo.caption" Class="mt-2 d-block">@_result.TotalCount student(s)</MudText>
+}
+
+@code {
+    private string? _search;
+    private StudentStatus? _status = StudentStatus.Active;
+    private Guid? _batchId;
+    private int _page = 1;
+    private bool _loading = true;
+    private PagedList<StudentListItem>? _result;
+    private IReadOnlyList<BatchOption> _batches = [];
+
+    [SupplyParameterFromQuery(Name = "batch")]
+    private Guid? BatchFromQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _batchId = BatchFromQuery;
+        _batches = await Batches.GetOptionsAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _result = await Students.SearchAsync(new StudentQuery(_search, _status, _batchId, _page));
+        _loading = false;
+    }
+
+    private async Task OnSearchChanged(string? value)
+    {
+        _search = value;
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task OnStatusChanged(StudentStatus? value)
+    {
+        _status = value;
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task OnBatchChanged(Guid? value)
+    {
+        _batchId = value;
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        _page = page;
+        await LoadAsync();
+    }
+
+    private void OpenStudent(TableRowClickEventArgs<StudentListItem> args)
+    {
+        if (args.Item is { } student) Navigation.NavigateTo($"students/{student.Id}");
+    }
+
+    internal static Color StatusColor(StudentStatus status) => status switch
+    {
+        StudentStatus.Active => Color.Success,
+        StudentStatus.Inactive => Color.Warning,
+        _ => Color.Default,
+    };
+}

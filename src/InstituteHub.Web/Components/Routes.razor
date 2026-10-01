@@ -1,0 +1,23 @@
+@using InstituteHub.Web.Components.Account.Shared
+<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated == true)
+                {
+                    <MudAlert Severity="Severity.Warning" Class="mt-4">
+                        You do not have permission to open this page. Ask your institute owner for access.
+                    </MudAlert>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
+            </NotAuthorized>
+            <Authorizing>
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            </Authorizing>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>

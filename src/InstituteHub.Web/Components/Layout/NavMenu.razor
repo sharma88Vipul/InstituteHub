@@ -1,0 +1,47 @@
+@* Role-aware navigation (design doc 5.2 / 5.3). Pages not built yet show a "coming soon" placeholder. *@
+
+<MudNavMenu Class="py-2" Bordered="true">
+    <AuthorizeView>
+        <Authorized>
+            <MudNavLink Href="dashboard" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+
+            <AuthorizeView Policy="@Policies.ViewStudents" Context="students">
+                <MudNavLink Href="students" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.School">Students</MudNavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Policies.ViewStudents" Context="batches">
+                <MudNavLink Href="batches" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Groups">Batches</MudNavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Policies.MarkAttendance" Context="attendance">
+                <MudNavLink Href="attendance" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.FactCheck">Attendance</MudNavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Policies.RecordPayments" Context="fees">
+                <MudNavGroup Title="Fees" Icon="@Icons.Material.Filled.CurrencyRupee" Expanded="false">
+                    <MudNavLink Href="fees/dues" Match="NavLinkMatch.Prefix">Pending dues</MudNavLink>
+                    <MudNavLink Href="payments" Match="NavLinkMatch.Prefix">Payments</MudNavLink>
+                    <MudNavLink Href="fees/plans" Match="NavLinkMatch.Prefix">Fee plans</MudNavLink>
+                </MudNavGroup>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Policies.SendReminders" Context="reminders">
+                <MudNavLink Href="reminders" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Chat">Reminders</MudNavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Policies.ViewAttendanceReports" Context="reports">
+                <MudNavLink Href="reports" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BarChart">Reports</MudNavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Policies.ManageInstitute" Context="settings">
+                <MudDivider Class="my-2" />
+                <MudNavLink Href="onboarding" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Checklist">Setup checklist</MudNavLink>
+                <MudNavLink Href="settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
+            </AuthorizeView>
+        </Authorized>
+        <NotAuthorized>
+            <MudNavLink Href="signup" Icon="@Icons.Material.Filled.AddBusiness">Sign up your institute</MudNavLink>
+            <MudNavLink Href="Account/Login" Icon="@Icons.Material.Filled.Login">Log in</MudNavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+</MudNavMenu>
