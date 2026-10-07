@@ -1,0 +1,57 @@
+@using InstituteHub.Application.Attendance
+@using InstituteHub.Web.Features.Attendance
+
+@inject AttendanceService Service
+
+@* Attendance tab on the student profile: last 90 days. *@
+
+@if (_data is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_data.Summary.Total == 0)
+{
+    <MudText>No attendance marked in the last 90 days.</MudText>
+}
+else
+{
+    <MudGrid Spacing="2" Class="mb-3">
+        <MudItem xs="12" sm="4">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.caption">Attendance (last 90 days)</MudText>
+                <MudText Typo="Typo.h5" Color="@(_data.Summary.Percentage < 75 ? Color.Error : Color.Success)">
+                    @AttendanceUi.Percent(_data.Summary.Percentage)
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="3" sm="2"><MudPaper Outlined="true" Class="pa-3"><MudText Typo="Typo.caption">Present</MudText><MudText Typo="Typo.h6">@_data.Summary.Present</MudText></MudPaper></MudItem>
+        <MudItem xs="3" sm="2"><MudPaper Outlined="true" Class="pa-3"><MudText Typo="Typo.caption">Absent</MudText><MudText Typo="Typo.h6">@_data.Summary.Absent</MudText></MudPaper></MudItem>
+        <MudItem xs="3" sm="2"><MudPaper Outlined="true" Class="pa-3"><MudText Typo="Typo.caption">Late</MudText><MudText Typo="Typo.h6">@_data.Summary.Late</MudText></MudPaper></MudItem>
+        <MudItem xs="3" sm="2"><MudPaper Outlined="true" Class="pa-3"><MudText Typo="Typo.caption">Leave</MudText><MudText Typo="Typo.h6">@_data.Summary.Leave</MudText></MudPaper></MudItem>
+    </MudGrid>
+
+    <MudTable T="StudentAttendanceEntry" Items="_data.Recent" Dense="true" Elevation="0" Breakpoint="Breakpoint.Xs">
+        <HeaderContent>
+            <MudTh>Date</MudTh>
+            <MudTh>Batch</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Remark</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Date">@context.Date.ToString("ddd, dd MMM")</MudTd>
+            <MudTd DataLabel="Batch">@context.BatchName</MudTd>
+            <MudTd DataLabel="Status"><MudChip T="string" Size="Size.Small" Color="@AttendanceUi.ColorOf(context.Status)">@context.Status</MudChip></MudTd>
+            <MudTd DataLabel="Remark">@context.Remark</MudTd>
+        </RowTemplate>
+    </MudTable>
+    <MudText Typo="Typo.caption" Class="mt-1 d-block">Showing the latest @_data.Recent.Count entries. Late counts as present; leave is not counted.</MudText>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid StudentId { get; set; }
+
+    private StudentAttendance? _data;
+
+    protected override async Task OnParametersSetAsync() =>
+        _data = await Service.GetStudentAttendanceAsync(StudentId);
+}

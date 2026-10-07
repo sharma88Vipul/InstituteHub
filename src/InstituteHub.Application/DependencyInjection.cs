@@ -1,4 +1,5 @@
 using FluentValidation;
+using InstituteHub.Application.Attendance;
 using InstituteHub.Application.Batches;
 using InstituteHub.Application.Fees;
 using InstituteHub.Application.Students;
@@ -20,6 +21,8 @@ public static class DependencyInjection
         services.AddScoped<BatchService>();
         services.AddScoped<EnrollmentService>();
         services.AddScoped<FeePlanService>();
+        services.AddScoped<FeeDueService>();
+        services.AddScoped<AttendanceService>();
 
         return services;
     }

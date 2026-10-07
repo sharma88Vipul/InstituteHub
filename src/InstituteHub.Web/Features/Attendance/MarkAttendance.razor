@@ -1,0 +1,281 @@
+@page "/attendance"
+@attribute [Authorize(Policy = Policies.MarkAttendance)]
+
+@using InstituteHub.Application.Attendance
+@using InstituteHub.Domain.Attendance
+
+@inject AttendanceService Service
+@inject IClock Clock
+@inject ISnackbar Snackbar
+
+<PageTitle>Attendance – InstituteHub</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+    <MudText Typo="Typo.h5">Attendance</MudText>
+    <div style="max-width: 11rem;">
+        <MudDatePicker Date="_date" DateChanged="OnDateChanged" Label="Date" DateFormat="dd-MM-yyyy"
+                       MaxDate="DateTime.Today" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </div>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_sheet is null)
+{
+    @* Step 1: choose a batch *@
+    @if (_batches.Count == 0)
+    {
+        <MudPaper Outlined="true" Class="pa-6">
+            <MudText>No batches to mark. @(_isTeacher ? "Ask the office to assign you to a batch." : "Create a batch first.")</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Choose a batch for @DateLabel</MudText>
+        <MudStack Spacing="2">
+            @foreach (var b in _batches)
+            {
+                <MudPaper Outlined="true" Class="pa-4 d-flex align-center gap-3" Style="cursor: pointer;"
+                          @onclick="() => OpenSheetAsync(b.BatchId)">
+                    <MudIcon Icon="@(b.MarkedToday ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.Circle)"
+                             Color="@(b.MarkedToday ? Color.Success : Color.Default)" />
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.subtitle1">@b.Name</MudText>
+                        <MudText Typo="Typo.caption">@b.Schedule</MudText>
+                    </div>
+                    @if (b.MarkedToday)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Marked</MudChip>
+                    }
+                    else if (!b.ScheduledToday)
+                    {
+                        <MudChip T="string" Size="Size.Small">No class</MudChip>
+                    }
+                    <MudIcon Icon="@Icons.Material.Filled.ChevronRight" />
+                </MudPaper>
+            }
+        </MudStack>
+    }
+}
+else
+{
+    @* Step 2: mark the register *@
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-2">
+        <div>
+            <MudText Typo="Typo.h6">@_sheet.BatchName</MudText>
+            <MudText Typo="Typo.caption">
+                @DateLabel
+                @if (_sheet.AlreadyMarked && _sheet.MarkedAt is { } at)
+                {
+                    <span> · saved by @(_sheet.MarkedByName ?? "staff") at @at.ToOffset(TimeSpan.FromHours(5.5)).ToString("hh:mm tt")</span>
+                }
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack" OnClick="BackToBatches">Batches</MudButton>
+    </MudStack>
+
+    @if (!_sheet.IsScheduledDay)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">This batch does not normally meet on @_sheet.Date.DayOfWeek.</MudAlert>
+    }
+    @if (!_sheet.CanEdit)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@_sheet.ReadOnlyReason</MudAlert>
+    }
+
+    @if (_rows.Count == 0)
+    {
+        <MudPaper Outlined="true" Class="pa-6"><MudText>No students were in this batch on @DateLabel.</MudText></MudPaper>
+    }
+    else
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-2">
+            <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap">
+                <MudChip T="string" Size="Size.Small" Color="Color.Success">Present @Count(AttendanceStatus.Present)</MudChip>
+                <MudChip T="string" Size="Size.Small" Color="Color.Error">Absent @Count(AttendanceStatus.Absent)</MudChip>
+                @if (Count(AttendanceStatus.Late) > 0)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning">Late @Count(AttendanceStatus.Late)</MudChip>
+                }
+                @if (Count(AttendanceStatus.Leave) > 0)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info">Leave @Count(AttendanceStatus.Leave)</MudChip>
+                }
+            </MudStack>
+            @if (_sheet.CanEdit)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="AllPresent">Mark all present</MudButton>
+            }
+        </MudStack>
+
+        @if (_sheet.CanEdit)
+        {
+            <MudText Typo="Typo.caption" Class="mb-2 d-block">Tap a student to switch between Present and Absent.</MudText>
+        }
+
+        <MudStack Spacing="1" Class="mb-4">
+            @foreach (var row in _rows)
+            {
+                <MudPaper Outlined="true" Class="pa-3 d-flex align-center gap-2"
+                          Style="@($"border-left: 6px solid {AttendanceUi.BorderOf(row.Status)}; cursor: {(_sheet.CanEdit ? "pointer" : "default")}; user-select: none;")"
+                          @onclick="() => Toggle(row)">
+                    <div class="flex-grow-1">
+                        <MudText Typo="Typo.subtitle1">@row.FullName</MudText>
+                        <MudText Typo="Typo.caption">@row.AdmissionNo</MudText>
+                    </div>
+                    <MudChip T="string" Color="@AttendanceUi.ColorOf(row.Status)" Variant="Variant.Filled">@row.Status</MudChip>
+                    @if (_sheet.CanEdit)
+                    {
+                        <span @onclick:stopPropagation="true">
+                            <MudMenu Icon="@Icons.Material.Filled.MoreVert" aria-label="More options" Dense="true">
+                                @foreach (var status in Enum.GetValues<AttendanceStatus>())
+                                {
+                                    <MudMenuItem OnClick="() => row.Status = status">@status</MudMenuItem>
+                                }
+                            </MudMenu>
+                        </span>
+                    }
+                </MudPaper>
+            }
+        </MudStack>
+
+        <ErrorSummary Errors="_errors" />
+
+        @if (_sheet.CanEdit)
+        {
+            <div class="attendance-save-bar">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth="true"
+                           Disabled="_saving" OnClick="SaveAsync">
+                    @(_saving ? "Saving…" : $"Save attendance ({Count(AttendanceStatus.Absent)} absent)")
+                </MudButton>
+            </div>
+        }
+    }
+}
+
+@code {
+    private DateTime? _date;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _isTeacher;
+    private IReadOnlyList<TodayBatch> _batches = [];
+    private AttendanceSheet? _sheet;
+    private List<RowModel> _rows = [];
+    private IReadOnlyList<Error>? _errors;
+
+    [SupplyParameterFromQuery(Name = "batch")]
+    private Guid? BatchFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "date")]
+    private string? DateFromQuery { get; set; }
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private DateOnly SelectedDate => DateOnly.FromDateTime(_date ?? DateTime.Today);
+
+    private string DateLabel => SelectedDate == Clock.Today() ? "today" : SelectedDate.ToString("ddd, dd MMM yyyy");
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationState is not null)
+        {
+            var principal = (await AuthenticationState).User;
+            _isTeacher = principal.IsInRole(Roles.Teacher) && !principal.IsInRole(Roles.Owner) && !principal.IsInRole(Roles.Staff);
+        }
+
+        _date = DateOnly.TryParse(DateFromQuery, out var d) ? d.ToDateTime(TimeOnly.MinValue) : Clock.Today().ToDateTime(TimeOnly.MinValue);
+
+        if (BatchFromQuery is { } batchId)
+        {
+            await OpenSheetAsync(batchId);
+        }
+        else
+        {
+            await LoadBatchesAsync();
+        }
+        _loading = false;
+    }
+
+    private async Task LoadBatchesAsync() => _batches = await Service.GetTodayAsync(SelectedDate);
+
+    private async Task OnDateChanged(DateTime? value)
+    {
+        _date = value ?? DateTime.Today;
+        _errors = null;
+        if (_sheet is not null)
+        {
+            await OpenSheetAsync(_sheet.BatchId);
+        }
+        else
+        {
+            await LoadBatchesAsync();
+        }
+    }
+
+    private async Task OpenSheetAsync(Guid batchId)
+    {
+        _errors = null;
+        _sheet = await Service.GetSheetAsync(batchId, SelectedDate);
+        _rows = _sheet?.Rows.Select(r => new RowModel(r.StudentId, r.AdmissionNo, r.FullName) { Status = r.Status, Remark = r.Remark }).ToList() ?? [];
+        if (_sheet is null)
+        {
+            Snackbar.Add("That batch is not available.", Severity.Warning);
+            await LoadBatchesAsync();
+        }
+    }
+
+    private async Task BackToBatches()
+    {
+        _sheet = null;
+        _rows = [];
+        _errors = null;
+        await LoadBatchesAsync();
+    }
+
+    private int Count(AttendanceStatus status) => _rows.Count(r => r.Status == status);
+
+    private void Toggle(RowModel row)
+    {
+        if (_sheet is not { CanEdit: true }) return;
+        row.Status = row.Status == AttendanceStatus.Present ? AttendanceStatus.Absent : AttendanceStatus.Present;
+    }
+
+    private void AllPresent()
+    {
+        foreach (var row in _rows) row.Status = AttendanceStatus.Present;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_sheet is null) return;
+        _saving = true;
+        _errors = null;
+
+        var result = await Service.SaveAsync(new SaveAttendanceRequest(
+            _sheet.BatchId, _sheet.Date,
+            _rows.Select(r => new AttendanceMark(r.StudentId, r.Status, r.Remark)).ToList()));
+
+        _saving = false;
+        if (result.IsFailure)
+        {
+            _errors = result.Errors;
+            return;
+        }
+
+        var s = result.Value;
+        Snackbar.Add($"Attendance saved: {s.Present + s.Late} present, {s.Absent} absent.", Severity.Success);
+        await OpenSheetAsync(_sheet.BatchId);
+    }
+
+    private sealed class RowModel(Guid studentId, string admissionNo, string fullName)
+    {
+        public Guid StudentId { get; } = studentId;
+        public string AdmissionNo { get; } = admissionNo;
+        public string FullName { get; } = fullName;
+        public AttendanceStatus Status { get; set; }
+        public string? Remark { get; set; }
+    }
+}

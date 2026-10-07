@@ -5,6 +5,7 @@
 @using InstituteHub.Domain.Fees
 
 @inject FeePlanService FeePlansSer
+@inject FeeDueService DueService
 @inject ISnackbar Snackbar
 
 <PageTitle>Fee plans – InstituteHub</PageTitle>
@@ -13,6 +14,11 @@
     <MudText Typo="Typo.h5">Fee plans</MudText>
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
         <MudSwitch T="bool" Value="_showInactive" ValueChanged="OnShowInactiveChanged" Label="Show inactive" Color="Color.Primary" />
+        <MudTooltip Text="Creates dues for students who have none yet, and monthly dues up to this month. Safe to run any time.">
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Autorenew" Disabled="_generating" OnClick="GenerateDuesAsync">
+                @(_generating ? "Creating…" : "Create missing dues")
+            </MudButton>
+        </MudTooltip>
         @if (_editing is null)
         {
             <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="StartNew">New fee plan</MudButton>
@@ -105,7 +111,9 @@
 </MudTable>
 
 <MudText Typo="Typo.caption" Class="mt-2 d-block">
-    Changing a plan does not change dues already created for students. Due generation arrives in week 5.
+    Changing a plan does not change dues already created for students; it applies to students who join afterwards.
+    Monthly dues are created for the first month when a student joins; until the automatic monthly job (week 7),
+    use "Create missing dues" at the start of each month.
 </MudText>
 
 @code {
@@ -115,6 +123,7 @@
     private Guid? _editingId;
     private IReadOnlyList<Error>? _errors;
     private bool _saving;
+    private bool _generating;
 
     private string Summary => _editing is null ? "" :
         FeePlanSummary.Describe(_editing.BillingType, _editing.TotalAmount, _editing.MonthlyAmount, _editing.InstalmentCount);
@@ -178,6 +187,22 @@
         Snackbar.Add("Fee plan saved.", Severity.Success);
         Cancel();
         await LoadAsync();
+    }
+
+    private async Task GenerateDuesAsync()
+    {
+        _generating = true;
+        var result = await DueService.GenerateMissingDuesAsync();
+        _generating = false;
+
+        if (result.IsFailure)
+        {
+            Snackbar.Add(result.FirstError?.Message ?? "Could not create dues.", Severity.Error);
+            return;
+        }
+        Snackbar.Add(result.Value.DuesCreated == 0
+            ? "All dues are already up to date."
+            : $"Created {result.Value.DuesCreated} due(s).", Severity.Success);
     }
 
     private async Task ToggleActiveAsync(FeePlanItem p)

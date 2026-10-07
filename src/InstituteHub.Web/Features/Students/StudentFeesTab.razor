@@ -1,0 +1,133 @@
+@using InstituteHub.Application.Fees
+@using InstituteHub.Domain.Fees
+
+@inject FeeDueService DueService
+@inject ISnackbar Snackbar
+
+@* Fees tab on the student profile: every due, oldest first, with totals. Payments arrive in week 6. *@
+
+@if (!_loaded)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_fees is null)
+{
+    <MudAlert Severity="Severity.Info" Dense="true">Fee details are visible to the owner and office staff.</MudAlert>
+}
+else if (_fees.Dues.Count == 0)
+{
+    <MudText>No fee dues yet. Dues are created when the student joins a batch with a fee plan.</MudText>
+}
+else
+{
+    <MudGrid Spacing="2" Class="mb-3">
+        <MudItem xs="6" sm="3">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.caption">Total fee</MudText>
+                <MudText Typo="Typo.h6">@Money.Format(_fees.Totals.Gross - _fees.Totals.Discount)</MudText>
+                @if (_fees.Totals.Discount > 0)
+                {
+                    <MudText Typo="Typo.caption">after @Money.Format(_fees.Totals.Discount) discount</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.caption">Paid</MudText>
+                <MudText Typo="Typo.h6" Color="Color.Success">@Money.Format(_fees.Totals.Paid)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.caption">Balance</MudText>
+                <MudText Typo="Typo.h6">@Money.Format(_fees.Totals.Balance)</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.caption">Overdue</MudText>
+                <MudText Typo="Typo.h6" Color="@(_fees.Totals.Overdue > 0 ? Color.Error : Color.Default)">@Money.Format(_fees.Totals.Overdue)</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <ErrorSummary Errors="_errors" />
+
+    <MudTable T="FeeDueItem" Items="_fees.Dues" Dense="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Due</MudTh>
+            <MudTh>Batch</MudTh>
+            <MudTh>Due date</MudTh>
+            <MudTh Style="text-align: right;">Amount</MudTh>
+            <MudTh Style="text-align: right;">Discount</MudTh>
+            <MudTh Style="text-align: right;">Paid</MudTh>
+            <MudTh Style="text-align: right;">Balance</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Due"><strong>@context.Title</strong></MudTd>
+            <MudTd DataLabel="Batch">@context.BatchName</MudTd>
+            <MudTd DataLabel="Due date">
+                <MudText Typo="Typo.body2" Color="@(context.IsOverdue ? Color.Error : Color.Default)">@context.DueDate.ToString("dd MMM yyyy")</MudText>
+            </MudTd>
+            <MudTd DataLabel="Amount" Style="text-align: right;">@Money.Format(context.Amount)</MudTd>
+            <MudTd DataLabel="Discount" Style="text-align: right;">@(context.DiscountAmount > 0 ? Money.Format(context.DiscountAmount) : "–")</MudTd>
+            <MudTd DataLabel="Paid" Style="text-align: right;">@(context.PaidAmount > 0 ? Money.Format(context.PaidAmount) : "–")</MudTd>
+            <MudTd DataLabel="Balance" Style="text-align: right;"><strong>@Money.Format(context.Balance)</strong></MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" Size="Size.Small" Color="@StatusColor(context)">@StatusText(context)</MudChip>
+            </MudTd>
+            <MudTd>
+                @if (context.Status == FeeDueStatus.Pending)
+                {
+                    <AuthorizeView Policy="@Policies.CancelPayments" Context="auth">
+                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => WaiveAsync(context)">Waive</MudButton>
+                    </AuthorizeView>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+    <MudText Typo="Typo.caption" Class="mt-1 d-block">Fee collection and receipts arrive in week 6.</MudText>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid StudentId { get; set; }
+
+    private bool _loaded;
+    private StudentFees? _fees;
+    private IReadOnlyList<Error>? _errors;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _fees = await DueService.GetStudentFeesAsync(StudentId);
+        _loaded = true;
+    }
+
+    private async Task WaiveAsync(FeeDueItem due)
+    {
+        var result = await DueService.WaiveAsync(due.Id);
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsFailure) return;
+
+        Snackbar.Add($"{due.Title} waived.", Severity.Success);
+        _fees = await DueService.GetStudentFeesAsync(StudentId);
+    }
+
+    private static Color StatusColor(FeeDueItem d) => d.Status switch
+    {
+        FeeDueStatus.Paid => Color.Success,
+        FeeDueStatus.Waived => Color.Default,
+        _ when d.IsOverdue => Color.Error,
+        FeeDueStatus.PartiallyPaid => Color.Warning,
+        _ => Color.Info,
+    };
+
+    private static string StatusText(FeeDueItem d) => d.Status switch
+    {
+        FeeDueStatus.Pending when d.IsOverdue => "Overdue",
+        FeeDueStatus.PartiallyPaid => d.IsOverdue ? "Part paid · overdue" : "Part paid",
+        FeeDueStatus.Pending => "Pending",
+        var s => s.ToString(),
+    };
+}

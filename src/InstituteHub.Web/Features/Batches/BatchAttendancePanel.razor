@@ -1,0 +1,79 @@
+@using InstituteHub.Application.Attendance
+@using InstituteHub.Web.Features.Attendance
+
+@inject AttendanceService Service
+
+@* Attendance summary on the batch page: this month's registers and each student's percentage. *@
+
+<MudPaper Outlined="true" Class="pa-4 mt-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-2">
+        <MudText Typo="Typo.h6">Attendance this month</MudText>
+        <AuthorizeView Policy="@Policies.MarkAttendance">
+            <MudButton Href="@($"attendance?batch={BatchId}")" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.FactCheck">Mark attendance</MudButton>
+        </AuthorizeView>
+    </MudStack>
+
+    @if (_data is null)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_data.Sessions.Count == 0)
+    {
+        <MudText Typo="Typo.body2">No attendance marked since @_data.From.ToString("dd MMM").</MudText>
+    }
+    else
+    {
+        <MudText Typo="Typo.body2" Class="mb-2">
+            @_data.Sessions.Count classes marked · average attendance
+            <strong>@AttendanceUi.Percent(Average)</strong>
+        </MudText>
+
+        <div class="d-flex flex-wrap gap-1 mb-3">
+            @foreach (var s in _data.Sessions)
+            {
+                <MudTooltip Text="@($"{s.Counts.Present + s.Counts.Late} present, {s.Counts.Absent} absent")">
+                    <MudChip T="string" Size="Size.Small" Href="@($"attendance?batch={BatchId}&date={s.Date:yyyy-MM-dd}")">
+                        @s.Date.ToString("dd MMM"): @AttendanceUi.Percent(s.Counts.Percentage)
+                    </MudChip>
+                </MudTooltip>
+            }
+        </div>
+
+        <MudTable T="BatchStudentAttendance" Items="_data.Students" Dense="true" Elevation="0" Breakpoint="Breakpoint.Xs">
+            <HeaderContent>
+                <MudTh>Student</MudTh>
+                <MudTh>Attendance</MudTh>
+                <MudTh>Absent</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Student"><MudLink Href="@($"students/{context.StudentId}")">@context.FullName</MudLink></MudTd>
+                <MudTd DataLabel="Attendance">
+                    <MudText Typo="Typo.body2" Color="@(context.Summary.Percentage < 75 ? Color.Error : Color.Default)">
+                        @AttendanceUi.Percent(context.Summary.Percentage)
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Absent">@context.Summary.Absent</MudTd>
+            </RowTemplate>
+        </MudTable>
+        <MudText Typo="Typo.caption" Class="mt-1 d-block">Students below 75% are shown first in red.</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public Guid BatchId { get; set; }
+
+    private BatchAttendance? _data;
+
+    private double? Average
+    {
+        get
+        {
+            var values = _data?.Sessions.Select(s => s.Counts.Percentage).Where(p => p is not null).Select(p => p!.Value).ToList();
+            return values is { Count: > 0 } ? Math.Round(values.Average(), 1) : null;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync() =>
+        _data = await Service.GetBatchAttendanceAsync(BatchId);
+}

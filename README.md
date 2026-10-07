@@ -100,6 +100,36 @@ They need the `InitialCreate` migration from step 3.
 - Tests: validators/formatting unit tests; integration tests for admission into a batch, sibling guardian,
   plan limit, double enrollment / full batch, and teacher scope.
 
-## Next (week 4)
+## What is in place (week 4)
 
-Attendance: sessions and records, mobile marking page, history on the student and batch pages.
+- **Mark attendance** (`/attendance`): pick a date and a batch (today's batches first, ticked when already marked);
+  every enrolled student starts as Present, tap a student to switch Present/Absent, menu for Late/Leave,
+  sticky "Save attendance" button for phones. Saving again updates the same register (one per batch per day).
+- Only students enrolled in the batch on that date are listed (joining and leaving dates are respected).
+- Teachers see only their own batches and can change attendance for the last 7 days; Owner/Staff any date.
+  Future dates are blocked.
+- **Student profile → Attendance tab**: last 90 days, percentage (Late counts as present, Leave not counted), recent entries.
+- **Batch page → Attendance this month**: classes marked, average, each student's percentage (lowest first).
+- Tests: attendance summary unit tests; integration tests for marking and correcting, history and percentages,
+  date rules and the register roster.
+
+## What is in place (week 5)
+
+- **Fee dues are created automatically** when a student joins a batch (admission or "Add to batch"), in the same save
+  as the enrollment (`FeeDueGenerator`, design doc 6.3):
+  - One-time: one due for the full fee on the joining date.
+  - Instalments: whole-rupee split, last instalment takes the remainder; first due in the joining month on the plan's
+    due day (never before joining), then every N months; the discount comes off the last instalments first.
+  - Monthly: the joining month is created immediately (period key `yyyy-MM`); the discount applies to every month.
+- Discount cannot exceed the fee (total for one-time/instalments, monthly fee for monthly plans).
+- **Student profile → Fees tab**: every due with amount, discount, paid, balance, overdue status and totals.
+  The owner can waive an unpaid due.
+- **Fee plans → "Create missing dues"**: creates dues for enrollments that have none (e.g. students added before
+  week 5) and monthly dues up to the current month. Safe to run any time; the automatic daily job comes in week 7.
+- Tests: generator unit tests for all three billing types; integration tests for dues on admission, catch-up,
+  waiving and discount limits.
+
+## Next (week 6)
+
+Payments: PaymentService with oldest-first allocation, atomic receipt numbers, cancel payment, receipt PDF,
+Collect fee page and pending dues page.

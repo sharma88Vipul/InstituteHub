@@ -100,8 +100,9 @@
                     }
                 </MudItem>
                 <MudItem xs="12" sm="3">
-                    <MudNumericField T="decimal" @bind-Value="_m.Discount" Label="Total discount (₹)" Min="0"
-                                     Variant="Variant.Outlined" Format="N0" />
+                    <MudNumericField T="decimal" @bind-Value="_m.Discount" Label="Discount (₹)" Min="0"
+                                     Variant="Variant.Outlined" Format="N0"
+                                     HelperText="Total for one-time/instalment plans; per month for monthly plans" />
                 </MudItem>
             }
         </MudGrid>

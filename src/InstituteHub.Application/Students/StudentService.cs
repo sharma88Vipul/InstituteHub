@@ -207,8 +207,7 @@ public sealed class StudentService(
                 Discard();
                 return Result.Failure<Guid>(enrollment.Errors.ToArray());
             }
-            db.Enrollments.Add(enrollment.Value);
-            // Week 5: FeeDueGenerator.Generate(enrollment) runs here, in the same SaveChanges.
+            enrollments.AddWithDues(enrollment.Value);   // enrollment + fee dues, saved together below
         }
 
         await db.SaveChangesAsync(ct);
