@@ -14,8 +14,12 @@
 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
     <MudText Typo="Typo.h5">Students</MudText>
     <AuthorizeView Policy="@Policies.ManageStudents">
-        <MudButton Href="students/new" Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.PersonAdd">Admit student</MudButton>
+        <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+            <MudButton Href="students/import" Variant="Variant.Outlined" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.UploadFile">Import CSV</MudButton>
+            <MudButton Href="students/new" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.PersonAdd">Admit student</MudButton>
+        </MudStack>
     </AuthorizeView>
 </MudStack>
 

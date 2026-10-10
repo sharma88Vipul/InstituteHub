@@ -1,0 +1,307 @@
+@page "/reports"
+@attribute [Authorize(Policy = Policies.ViewAttendanceReports)]
+
+@using InstituteHub.Application.Reports
+@using InstituteHub.Domain.Fees
+@using InstituteHub.Web.Features.Fees
+
+@inject ReportService Reports
+@inject IClock Clock
+
+<PageTitle>Reports – InstituteHub</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-3">Reports</MudText>
+
+<MudPaper Outlined="true" Class="pa-3 mb-3">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
+        <div style="max-width: 10rem;">
+            <MudDatePicker Date="_from" DateChanged="@(async d => { _from = d; await ReloadAsync(); })" Label="From" DateFormat="dd-MM-yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <div style="max-width: 10rem;">
+            <MudDatePicker Date="_to" DateChanged="@(async d => { _to = d; await ReloadAsync(); })" Label="To" DateFormat="dd-MM-yyyy"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" />
+        </div>
+        <MudChipSet T="string" SelectedValue="_preset" SelectedValueChanged="PresetChanged" SelectionMode="SelectionMode.SingleSelection">
+            <MudChip T="string" Value="@("month")" Size="Size.Small">This month</MudChip>
+            <MudChip T="string" Value="@("last")" Size="Size.Small">Last month</MudChip>
+            <MudChip T="string" Value="@("fy")" Size="Size.Small">This financial year</MudChip>
+        </MudChipSet>
+    </MudStack>
+    <MudText Typo="Typo.caption" Class="d-block mt-1">The date range applies to collections and attendance. Pending dues are always as of today.</MudText>
+</MudPaper>
+
+<MudTabs Outlined="true" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4" @bind-ActivePanelIndex="_tab">
+    @if (_canSeeMoney)
+    {
+        <MudTabPanel Text="Collections" Icon="@Icons.Material.Filled.CurrencyRupee">
+            @if (_collections is null)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else
+            {
+                var c = _collections;
+                <MudGrid Spacing="2" Class="mb-3">
+                    <MudItem xs="12" sm="4"><StatTile Label="Collected" Value="@Money.Format(c.Total)" /></MudItem>
+                    <MudItem xs="6" sm="4"><StatTile Label="Receipts" Value="@c.Receipts.ToString()" /></MudItem>
+                    <MudItem xs="6" sm="4"><StatTile Label="Kept as advance" Value="@Money.Format(c.Advance)" /></MudItem>
+                </MudGrid>
+
+                <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-2">
+                    <MudButton Href="@CsvLink("collections")" Target="_blank" Variant="Variant.Outlined" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Download">Download receipts (CSV)</MudButton>
+                </MudStack>
+
+                <MudGrid Spacing="3">
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">By payment mode</MudText>
+                        @if (c.ByMode.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">No payments in this period.</MudText>
+                        }
+                        @foreach (var m in c.ByMode)
+                        {
+                            <ShareBar Label="@CollectFee.ModeLabel(m.Mode)" Detail="@($"{m.Receipts} receipt(s)")"
+                                      Value="@Money.Format(m.Amount)" Percent="@Percent(m.Amount, c.Total)" />
+                        }
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">By batch</MudText>
+                        @if (c.ByBatch.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">No payments in this period.</MudText>
+                        }
+                        @foreach (var b in c.ByBatch)
+                        {
+                            <ShareBar Label="@b.Batch" Value="@Money.Format(b.Amount)" Percent="@Percent(b.Amount, c.Total)" />
+                        }
+                    </MudItem>
+                </MudGrid>
+
+                <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">By day</MudText>
+                <MudTable T="CollectionByDay" Items="c.ByDay" Dense="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.None">
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh Style="text-align: right;">Receipts</MudTh>
+                        <MudTh Style="text-align: right;">Amount</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Date.ToString("ddd, dd MMM")</MudTd>
+                        <MudTd Style="text-align: right;">@context.Receipts</MudTd>
+                        <MudTd Style="text-align: right;">@Money.Format(context.Amount)</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-3">No payments in this period.</MudText></NoRecordsContent>
+                </MudTable>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Pending dues" Icon="@Icons.Material.Filled.HourglassBottom">
+            @if (_dues is null)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else
+            {
+                var d = _dues;
+                <MudGrid Spacing="2" Class="mb-3">
+                    <MudItem xs="6" sm="4"><StatTile Label="Total pending" Value="@Money.Format(d.Total)" /></MudItem>
+                    <MudItem xs="6" sm="4"><StatTile Label="Overdue" Value="@Money.Format(d.OverdueTotal)" Highlight="@(d.OverdueTotal > 0)" /></MudItem>
+                    <MudItem xs="12" sm="4"><StatTile Label="Students with dues" Value="@d.Students.Count.ToString()" /></MudItem>
+                </MudGrid>
+
+                <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-2">
+                    <MudButton Href="reports/dues.csv" Target="_blank" Variant="Variant.Outlined" Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Download">Download (CSV)</MudButton>
+                </MudStack>
+
+                <MudText Typo="Typo.subtitle1" Class="mb-1">How late are the dues?</MudText>
+                @for (var i = 0; i < d.Buckets.Count; i++)
+                {
+                    var bucket = d.Buckets[i];
+                    <ShareBar Label="@bucket.Label" Detail="@($"{bucket.Students} student(s)")" Value="@Money.Format(bucket.Amount)"
+                              Percent="@Percent(bucket.Amount, d.Total)" Danger="@(i >= 3)" />
+                }
+
+                <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">Students (most overdue first)</MudText>
+                <MudTable T="StudentDueRow" Items="d.Students.Take(50)" Dense="true" Hover="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Student</MudTh>
+                        <MudTh>Guardian</MudTh>
+                        <MudTh Style="text-align: right;">Due</MudTh>
+                        <MudTh Style="text-align: right;">Days late</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Student">
+                            <MudLink Href="@($"students/{context.StudentId}")">@context.StudentName</MudLink>
+                            <span class="mud-text-secondary">(@context.AdmissionNo)</span>
+                        </MudTd>
+                        <MudTd DataLabel="Guardian">
+                            @(context.GuardianName ?? "-")
+                            @if (context.GuardianPhone is { } phone)
+                            {
+                                <span class="mud-text-secondary"> · @PhoneNumber.Format(phone)</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Due" Style="text-align: right;"><strong>@Money.Format(context.Balance)</strong></MudTd>
+                        <MudTd DataLabel="Days late" Style="text-align: right;">
+                            @if (context.DaysOverdue > 0)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="@(context.DaysOverdue > 60 ? Color.Error : Color.Warning)">@context.DaysOverdue</MudChip>
+                            }
+                            else
+                            {
+                                <span class="mud-text-secondary">Not yet due</span>
+                            }
+                        </MudTd>
+                        <MudTd>
+                            <MudButton Href="@($"payments/new?studentId={context.StudentId}")" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">Collect</MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-3">No pending dues. Well done!</MudText></NoRecordsContent>
+                </MudTable>
+                @if (d.Students.Count > 50)
+                {
+                    <MudText Typo="Typo.caption" Class="d-block mt-1">Showing 50 of @d.Students.Count students. Download the CSV for the full list.</MudText>
+                }
+            }
+        </MudTabPanel>
+    }
+
+    <MudTabPanel Text="Attendance" Icon="@Icons.Material.Filled.FactCheck">
+        @if (_attendance is null)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else
+        {
+            var a = _attendance;
+            <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-2">
+                <MudButton Href="@CsvLink("attendance")" Target="_blank" Variant="Variant.Outlined" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Download">Download per student (CSV)</MudButton>
+            </MudStack>
+
+            <MudText Typo="Typo.subtitle1" Class="mb-1">By batch</MudText>
+            <MudTable T="BatchAttendanceRow" Items="a.Batches" Dense="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Batch</MudTh>
+                    <MudTh Style="text-align: right;">Classes held</MudTh>
+                    <MudTh Style="text-align: right;">Students</MudTh>
+                    <MudTh Style="text-align: right;">Attendance</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Batch"><MudLink Href="@($"batches/{context.BatchId}")">@context.Batch</MudLink></MudTd>
+                    <MudTd DataLabel="Classes held" Style="text-align: right;">@context.Sessions</MudTd>
+                    <MudTd DataLabel="Students" Style="text-align: right;">@context.Students</MudTd>
+                    <MudTd DataLabel="Attendance" Style="text-align: right;"><AttendancePercent Value="@context.Summary.Percentage" Threshold="@a.Threshold" /></MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText Class="pa-3">No attendance was marked in this period.</MudText></NoRecordsContent>
+            </MudTable>
+
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">Students below @a.Threshold%</MudText>
+            <MudTable T="StudentAttendanceRow" Items="a.LowAttendance" Dense="true" Hover="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Student</MudTh>
+                    <MudTh>Batch</MudTh>
+                    <MudTh Style="text-align: right;">Absent</MudTh>
+                    <MudTh Style="text-align: right;">Attendance</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Student">
+                        <MudLink Href="@($"students/{context.StudentId}")">@context.StudentName</MudLink>
+                        <span class="mud-text-secondary">(@context.AdmissionNo)</span>
+                    </MudTd>
+                    <MudTd DataLabel="Batch">@context.Batch</MudTd>
+                    <MudTd DataLabel="Absent" Style="text-align: right;">@context.Summary.Absent of @(context.Summary.Present + context.Summary.Late + context.Summary.Absent)</MudTd>
+                    <MudTd DataLabel="Attendance" Style="text-align: right;"><AttendancePercent Value="@context.Summary.Percentage" Threshold="@a.Threshold" /></MudTd>
+                </RowTemplate>
+                <NoRecordsContent><MudText Class="pa-3">Every student is at or above @a.Threshold%.</MudText></NoRecordsContent>
+            </MudTable>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private DateTime? _from;
+    private DateTime? _to;
+    private string? _preset = "month";
+    private int _tab;
+    private bool _canSeeMoney;
+
+    private CollectionsReport? _collections;
+    private DuesAgeingReport? _dues;
+    private AttendanceReport? _attendance;
+
+    // One DbContext per circuit: date changes and tab loads must not query at the same time.
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private DateOnly From => DateOnly.FromDateTime(_from ?? DateTime.Today);
+    private DateOnly To => DateOnly.FromDateTime(_to ?? DateTime.Today);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthenticationState is not null)
+        {
+            var principal = (await AuthenticationState).User;
+            _canSeeMoney = principal.IsInRole(Roles.Owner) || principal.IsInRole(Roles.Staff);
+        }
+        SetPreset("month");
+        await LoadAllAsync();
+    }
+
+    private async Task PresetChanged(string? preset)
+    {
+        if (preset is null) return;
+        SetPreset(preset);
+        await ReloadAsync();
+    }
+
+    private void SetPreset(string preset)
+    {
+        _preset = preset;
+        var today = Clock.Today();
+        var monthStart = new DateOnly(today.Year, today.Month, 1);
+        (DateOnly start, DateOnly end) = preset switch
+        {
+            "last" => (monthStart.AddMonths(-1), monthStart.AddDays(-1)),
+            // Indian financial year: 1 April to 31 March.
+            "fy" => (new DateOnly(today.Month >= 4 ? today.Year : today.Year - 1, 4, 1), today),
+            _ => (monthStart, today),
+        };
+        _from = start.ToDateTime(TimeOnly.MinValue);
+        _to = end.ToDateTime(TimeOnly.MinValue);
+    }
+
+    private async Task ReloadAsync()
+    {
+        _collections = null;
+        _attendance = null;
+        await LoadAllAsync();
+    }
+
+    private async Task LoadAllAsync()
+    {
+        await _dbLock.WaitAsync();
+        try
+        {
+            if (_canSeeMoney)
+            {
+                _collections = await Reports.GetCollectionsAsync(From, To);
+                _dues ??= await Reports.GetDuesAgeingAsync();
+            }
+            _attendance = await Reports.GetAttendanceAsync(From, To);
+        }
+        finally
+        {
+            _dbLock.Release();
+        }
+    }
+
+    private string CsvLink(string report) => $"reports/{report}.csv?from={From:yyyy-MM-dd}&to={To:yyyy-MM-dd}";
+
+    private static double Percent(decimal part, decimal total) => total <= 0 ? 0 : (double)(part * 100 / total);
+}

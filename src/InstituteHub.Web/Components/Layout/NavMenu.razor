@@ -19,8 +19,9 @@
 
             <AuthorizeView Policy="@Policies.RecordPayments" Context="fees">
                 <MudNavGroup Title="Fees" Icon="@Icons.Material.Filled.CurrencyRupee" Expanded="false">
+                    <MudNavLink Href="payments/new" Match="NavLinkMatch.All">Collect fee</MudNavLink>
                     <MudNavLink Href="fees/dues" Match="NavLinkMatch.Prefix">Pending dues</MudNavLink>
-                    <MudNavLink Href="payments" Match="NavLinkMatch.Prefix">Payments</MudNavLink>
+                    <MudNavLink Href="payments" Match="NavLinkMatch.All">Payments</MudNavLink>
                     <MudNavLink Href="fees/plans" Match="NavLinkMatch.Prefix">Fee plans</MudNavLink>
                 </MudNavGroup>
             </AuthorizeView>
@@ -31,6 +32,10 @@
 
             <AuthorizeView Policy="@Policies.ViewAttendanceReports" Context="reports">
                 <MudNavLink Href="reports" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BarChart">Reports</MudNavLink>
+            </AuthorizeView>
+
+            <AuthorizeView Policy="@Policies.PlatformAdmin" Context="platform">
+                <MudNavLink Href="hangfire" Target="_blank" Icon="@Icons.Material.Filled.Schedule">Background jobs</MudNavLink>
             </AuthorizeView>
 
             <AuthorizeView Policy="@Policies.ManageInstitute" Context="settings">

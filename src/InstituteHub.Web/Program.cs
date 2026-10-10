@@ -1,11 +1,15 @@
+using Hangfire;
 using InstituteHub.Application;
 using InstituteHub.Infrastructure;
 using InstituteHub.Infrastructure.Identity;
+using InstituteHub.Infrastructure.Jobs;
 using InstituteHub.Infrastructure.Persistence;
 using InstituteHub.Infrastructure.Persistence.Seeding;
 using InstituteHub.Web.Components;
 using InstituteHub.Web.Components.Account;
+using InstituteHub.Web.Endpoints;
 using InstituteHub.Web.Logging;
+using InstituteHub.Web.Monitoring;
 using InstituteHub.Web.Security;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Server.Circuits;
@@ -91,7 +95,9 @@ try
     // Authorization, rate limiting, health
     builder.Services.AddAuthorization(AuthorizationPolicies.Configure);
     builder.Services.AddRateLimiter(RateLimits.Configure);
-    builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>("database");
+    builder.Services.AddHealthChecks()
+        .AddDbContextCheck<AppDbContext>("database", tags: ["ready"])
+        .AddCheck<HangfireHealthCheck>("background-jobs", tags: ["ready"]);
 
     var app = builder.Build();
 
@@ -121,12 +127,29 @@ try
 
     // Additional endpoints required by the Identity /Account Razor components.
     app.MapAdditionalIdentityEndpoints();
-    app.MapHealthChecks("/health");
+    app.MapHealthEndpoints();
+    app.MapReceiptEndpoints();
+    app.MapWebhookEndpoints();
+    app.MapReportEndpoints();
 
-    // Later weeks: app.MapReceiptEndpoints(); app.MapWebhookEndpoints(); Hangfire dashboard + RecurringJobs.Register();
+    // Hangfire dashboard for the platform admin only (design doc 5.4). The endpoint policy does the check, so
+    // Hangfire's own "local requests only" filter is switched off.
+    app.MapHangfireDashboard("/hangfire", new DashboardOptions
+        {
+            Authorization = [],
+            DashboardTitle = "InstituteHub jobs",
+            AppPath = "/dashboard",
+            DisplayStorageConnectionString = false,
+        })
+        .RequireAuthorization(Policies.PlatformAdmin);
 
-    // Development: apply migrations automatically. Other environments: use an EF migration bundle in CI/CD.
-    await DbSeeder.SeedAsync(app.Services, applyMigrations: app.Environment.IsDevelopment());
+    // Development applies migrations automatically. On a server, run the EF migration bundle before starting the new
+    // version (deploy/README.md), or set Database:MigrateOnStartup=true for a single-instance deployment.
+    await DbSeeder.SeedAsync(app.Services,
+        applyMigrations: app.Environment.IsDevelopment() || builder.Configuration.GetValue("Database:MigrateOnStartup", false));
+
+    // Daily MonthlyDueJob (00:30) and FeeReminderJob (10:00), Indian time.
+    RecurringJobs.Register(app.Services);
 
     await app.RunAsync();
 }

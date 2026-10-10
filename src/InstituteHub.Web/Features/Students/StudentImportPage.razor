@@ -1,0 +1,243 @@
+@page "/students/import"
+@attribute [Authorize(Policy = Policies.ManageStudents)]
+
+@using InstituteHub.Application.Students
+@using Microsoft.AspNetCore.Components.Forms
+
+@inject StudentImportService Importer
+@inject ISnackbar Snackbar
+
+<PageTitle>Import students – InstituteHub</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+    <MudText Typo="Typo.h5">Import students</MudText>
+    <MudButton Href="students" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.ArrowBack">Students</MudButton>
+</MudStack>
+
+@if (_result is { } result)
+{
+    <MudAlert Severity="@(result.Failed.Count == 0 ? Severity.Success : Severity.Warning)" Class="mb-3">
+        @result.Imported student(s) imported.
+        @if (result.Failed.Count > 0)
+        {
+            <span> @result.Failed.Count row(s) could not be imported – see below.</span>
+        }
+    </MudAlert>
+    @if (result.Failed.Count > 0)
+    {
+        <MudTable T="ImportFailure" Items="result.Failed" Dense="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm" Class="mb-3">
+            <HeaderContent>
+                <MudTh>Row</MudTh>
+                <MudTh>Student</MudTh>
+                <MudTh>Problem</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Row">@context.LineNumber</MudTd>
+                <MudTd DataLabel="Student">@context.StudentName</MudTd>
+                <MudTd DataLabel="Problem"><MudText Typo="Typo.body2" Color="Color.Error">@context.Message</MudText></MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+    <MudStack Row="true" Spacing="2">
+        <MudButton Href="students" Variant="Variant.Filled" Color="Color.Primary">View students</MudButton>
+        <MudButton Variant="Variant.Outlined" OnClick="StartOver">Import another file</MudButton>
+    </MudStack>
+}
+else
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">1. Fill in the template</MudText>
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Download the template, open it in Excel or Google Sheets, put one student per row and save it as CSV.
+            Required: <strong>FirstName</strong>, <strong>GuardianName</strong> and <strong>GuardianPhone</strong>.
+            Dates like 25-06-2010. <strong>Batch</strong> must match a batch name exactly and the batch needs a default
+            fee plan; leave it empty to enroll students later. Students whose guardian phone is already registered are
+            linked to that guardian (siblings). Up to @StudentImportService.MaxRows students per file.
+        </MudText>
+        <MudButton Href="students/import-template.csv" Target="_blank" Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.Download">Download template</MudButton>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">2. Upload and check</MudText>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+            <MudFileUpload T="IBrowserFile" FilesChanged="UploadAsync" Accept=".csv,text/csv" MaximumFileCount="1">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.UploadFile"
+                               Disabled="_busy">Choose CSV file</MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+            @if (_fileName is not null)
+            {
+                <MudText Typo="Typo.body2">@_fileName</MudText>
+            }
+        </MudStack>
+        @if (_busy)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-3" />
+        }
+        <ErrorSummary Errors="_errors" />
+    </MudPaper>
+
+    @if (_preview is { } preview)
+    {
+        <MudPaper Outlined="true" Class="pa-4 mb-3">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">3. Review and import</MudText>
+
+            @foreach (var error in preview.FileErrors)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@error</MudAlert>
+            }
+            @if (preview.LimitWarning is { } warning)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@warning</MudAlert>
+            }
+
+            @if (preview.Rows.Count > 0)
+            {
+                <MudStack Row="true" Spacing="1" Class="mb-2" Wrap="Wrap.Wrap">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success">Ready @preview.ValidCount</MudChip>
+                    @if (preview.ErrorCount > 0)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error">With problems @preview.ErrorCount</MudChip>
+                        <MudSwitch T="bool" @bind-Value="_onlyProblems" Label="Show only rows with problems" Color="Color.Primary" />
+                    }
+                </MudStack>
+
+                <MudTable T="ImportRow" Items="VisibleRows" Dense="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm"
+                          FixedHeader="true" Height="420px">
+                    <HeaderContent>
+                        <MudTh>Row</MudTh>
+                        <MudTh>Student</MudTh>
+                        <MudTh>Guardian</MudTh>
+                        <MudTh>Batch</MudTh>
+                        <MudTh>Check</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Row">@context.LineNumber</MudTd>
+                        <MudTd DataLabel="Student">@context.StudentName</MudTd>
+                        <MudTd DataLabel="Guardian">
+                            @(context.GuardianName ?? "-")
+                            @if (context.GuardianPhone is { } phone)
+                            {
+                                <span class="mud-text-secondary"> · @phone</span>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Batch">@(context.BatchName ?? "–")</MudTd>
+                        <MudTd DataLabel="Check">
+                            @if (context.IsValid)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" />
+                            }
+                            else
+                            {
+                                @foreach (var problem in context.Errors)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block">@problem</MudText>
+                                }
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+
+            <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mt-3" Wrap="Wrap.Wrap">
+                <MudButton Variant="Variant.Text" OnClick="StartOver">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!preview.CanImport || _busy)" OnClick="ImportAsync">
+                    @(_busy ? "Importing…" : $"Import {preview.ValidCount} student(s)")
+                </MudButton>
+            </MudStack>
+            @if (preview.ErrorCount > 0 && preview.CanImport)
+            {
+                <MudText Typo="Typo.caption" Class="d-block mt-1" Align="Align.Right">
+                    Rows with problems are skipped. Fix them, then import a file with just those rows.
+                </MudText>
+            }
+        </MudPaper>
+    }
+}
+
+@code {
+    private string? _csv;
+    private string? _fileName;
+    private bool _busy;
+    private bool _onlyProblems;
+    private ImportPreview? _preview;
+    private ImportResult? _result;
+    private IReadOnlyList<Error>? _errors;
+
+    // One DbContext per circuit: preview and import must not run at the same time.
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    private IEnumerable<ImportRow> VisibleRows =>
+        _preview is null ? [] : _onlyProblems ? _preview.Rows.Where(r => !r.IsValid) : _preview.Rows;
+
+    private async Task UploadAsync(IBrowserFile? file)
+    {
+        if (file is null) return;
+        _errors = null;
+        _preview = null;
+        _fileName = file.Name;
+
+        if (file.Size > StudentImportService.MaxFileBytes)
+        {
+            _errors = [Error.Validation("File", "The file is larger than 1 MB. Split it into smaller files.")];
+            return;
+        }
+
+        if (!await _dbLock.WaitAsync(0)) return;
+        _busy = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(StudentImportService.MaxFileBytes);
+            using var reader = new StreamReader(stream);
+            _csv = await reader.ReadToEndAsync();
+
+            var result = await Importer.PreviewAsync(_csv);
+            if (result.IsFailure) _errors = result.Errors;
+            else _preview = result.Value;
+        }
+        catch (IOException)
+        {
+            _errors = [Error.Validation("File", "The file could not be read. Save it as CSV (comma separated) and try again.")];
+        }
+        finally
+        {
+            _busy = false;
+            _dbLock.Release();
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_csv is null || !await _dbLock.WaitAsync(0)) return;
+        _busy = true;
+        try
+        {
+            var result = await Importer.ImportAsync(_csv);
+            if (result.IsFailure)
+            {
+                _errors = result.Errors;
+                return;
+            }
+
+            _result = result.Value;
+            Snackbar.Add($"{result.Value.Imported} student(s) imported.", Severity.Success);
+        }
+        finally
+        {
+            _busy = false;
+            _dbLock.Release();
+        }
+    }
+
+    private void StartOver()
+    {
+        _csv = null;
+        _fileName = null;
+        _preview = null;
+        _result = null;
+        _errors = null;
+        _onlyProblems = false;
+    }
+}

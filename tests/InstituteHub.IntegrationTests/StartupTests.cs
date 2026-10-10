@@ -15,7 +15,12 @@ public class StartupTests(PostgresWebAppFactory factory)
         var response = await client.GetAsync("/health");
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        (await response.Content.ReadAsStringAsync()).ShouldBe("Healthy");
+        // JSON: {"status":"Healthy","checks":{"database":…,"background-jobs":…}}
+        var body = await response.Content.ReadAsStringAsync();
+        body.ShouldContain("\"status\":\"Healthy\"");
+        body.ShouldContain("background-jobs");
+
+        (await client.GetAsync("/health/live")).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]

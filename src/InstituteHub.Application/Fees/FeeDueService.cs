@@ -42,6 +42,61 @@ public sealed class FeeDueService(IAppDbContext db, ICurrentUser user, IClock cl
     }
 
     /// <summary>
+    /// Pending dues list (design doc 5.3 /fees/dues): overdue, due within 7 days, or all open dues; oldest first.
+    /// </summary>
+    public async Task<PendingDues> GetPendingDuesAsync(PendingDuesQuery query, CancellationToken ct = default)
+    {
+        if (!user.CanManage()) return new PendingDues([], 0, 0, 0, 1, query.PageSize);
+
+        var today = clock.Today();
+        var weekEnd = today.AddDays(7);
+        var dues = db.FeeDues.AsNoTracking()
+            .Where(d => d.Status == FeeDueStatus.Pending || d.Status == FeeDueStatus.PartiallyPaid);
+
+        dues = query.Filter switch
+        {
+            DueFilter.Overdue => dues.Where(d => d.DueDate < today),
+            DueFilter.DueThisWeek => dues.Where(d => d.DueDate >= today && d.DueDate <= weekEnd),
+            _ => dues,
+        };
+
+        if (query.BatchId is { } batchId)
+            dues = dues.Where(d => db.Enrollments.Any(e => e.Id == d.EnrollmentId && e.BatchId == batchId));
+
+        var rows = dues.Join(db.Students, d => d.StudentId, s => s.Id, (d, s) => new { d, s });
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            var term = query.Search.Trim().ToLower();
+            rows = rows.Where(x => (x.s.FirstName + " " + (x.s.LastName ?? "")).ToLower().Contains(term)
+                                   || x.s.AdmissionNo.ToLower().Contains(term));
+        }
+
+        var total = await rows.CountAsync(ct);
+        var totalBalance = await rows.SumAsync(x => (decimal?)(x.d.Amount - x.d.DiscountAmount - x.d.PaidAmount), ct) ?? 0;
+        var students = await rows.Select(x => x.s.Id).Distinct().CountAsync(ct);
+
+        var page = Math.Max(1, query.Page);
+        var items = await rows
+            .OrderBy(x => x.d.DueDate).ThenBy(x => x.s.FirstName)
+            .Skip((page - 1) * query.PageSize).Take(query.PageSize)
+            .Select(x => new
+            {
+                x.d.Id, StudentId = x.s.Id, x.s.AdmissionNo, x.d.Title, x.d.DueDate, x.d.ReminderCount,
+                Name = x.s.FirstName + (x.s.LastName == null ? "" : " " + x.s.LastName),
+                Balance = x.d.Amount - x.d.DiscountAmount - x.d.PaidAmount,
+                Phone = x.s.Guardians.OrderByDescending(g => g.IsPrimary).Select(g => g.Guardian!.Phone).FirstOrDefault(),
+                BatchName = db.Enrollments.Where(e => e.Id == x.d.EnrollmentId).Select(e => e.Batch!.Name).FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+
+        return new PendingDues(
+            items.Select(i => new PendingDueRow(i.Id, i.StudentId, i.Name, i.AdmissionNo, i.Phone, i.BatchName ?? "-",
+                    i.Title, i.DueDate, i.Balance, Math.Max(0, today.DayNumber - i.DueDate.DayNumber), i.ReminderCount))
+                .ToList(),
+            total, totalBalance, students, page, query.PageSize);
+    }
+
+    /// <summary>
     /// Creates dues that are missing: enrollments that have none yet (e.g. created before week 5), and monthly
     /// dues up to <paramref name="asOf"/>'s month. Safe to run any number of times. The daily MonthlyDueJob
     /// (week 7) calls this per institute.

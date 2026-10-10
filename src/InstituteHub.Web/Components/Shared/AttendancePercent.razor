@@ -1,0 +1,16 @@
+@* Attendance % as a coloured chip: red below the threshold, amber within 10 points of it, green otherwise. *@
+
+@if (Value is { } pct)
+{
+    <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+             Color="@(pct < Threshold ? Color.Error : pct < Threshold + 10 ? Color.Warning : Color.Success)">@pct.ToString("0.#")%</MudChip>
+}
+else
+{
+    <span class="mud-text-secondary">–</span>
+}
+
+@code {
+    [Parameter] public double? Value { get; set; }
+    [Parameter] public int Threshold { get; set; } = 75;
+}

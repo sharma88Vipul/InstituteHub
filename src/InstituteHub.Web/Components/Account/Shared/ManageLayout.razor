@@ -1,17 +1,21 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
 @layout InstituteHub.Web.Components.Layout.MainLayout
 
-<h1>Manage your account</h1>
+@* Account settings (/Account/Manage/*). The pages come from the Identity template and use Bootstrap markup;
+   ManageLayout.razor.css restyles them to match the MudBlazor look of the rest of the app. *@
 
-<div>
-    <h2>Change your account settings</h2>
-    <hr />
-    <div class="row">
-        <div class="col-lg-3">
+<div class="account-page">
+    <div class="account-header">
+        <h1 class="account-title">My account</h1>
+        <p class="account-subtitle">Your profile, sign-in and privacy settings.</p>
+    </div>
+
+    <div class="account-grid">
+        <nav class="account-nav" aria-label="Account settings">
             <ManageNavMenu />
-        </div>
-        <div class="col-lg-9">
+        </nav>
+        <section class="account-content">
             @Body
-        </div>
+        </section>
     </div>
 </div>

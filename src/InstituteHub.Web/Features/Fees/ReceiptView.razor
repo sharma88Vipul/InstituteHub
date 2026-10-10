@@ -1,0 +1,240 @@
+@page "/payments/{Id:guid}"
+@attribute [Authorize(Policy = Policies.RecordPayments)]
+
+@using InstituteHub.Application.Payments
+@using InstituteHub.Application.Messaging
+@using InstituteHub.Web.Features.Messaging
+
+@inject PaymentService PaymentSvc
+@inject MessagingService MessagingSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>Receipt @(_receipt?.ReceiptNumber) – InstituteHub</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else if (_receipt is null)
+{
+    <MudAlert Severity="Severity.Warning">Payment not found. <MudLink Href="payments">Back to payments</MudLink></MudAlert>
+}
+else
+{
+    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap" Class="mb-3">
+        <MudButton Href="@($"receipts/{Id}.pdf")" Target="_blank" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Print">Print / PDF</MudButton>
+        @if (_receipt.GuardianPhone is { } phone && !_receipt.IsCancelled)
+        {
+            <MudButton Href="@WhatsAppLink(phone)" Target="_blank" Variant="Variant.Outlined" Color="Color.Success"
+                       StartIcon="@Icons.Custom.Brands.WhatsApp">Share on WhatsApp</MudButton>
+        }
+        <MudButton Href="@($"payments/new?studentId={_receipt.StudentId}")" Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.Add">Collect again</MudButton>
+        <MudButton Href="payments" Variant="Variant.Text">All payments</MudButton>
+    </MudStack>
+
+    @if (_receipt.IsCancelled)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3">
+            @("This payment was CANCELLED" + (_receipt.CancelledAt is { } at ? $" on {at.ToOffset(TimeSpan.FromHours(5.5)):dd MMM yyyy}" : "") + ".")
+            Reason: @_receipt.CancelledReason
+        </MudAlert>
+    }
+
+    <MudPaper Outlined="true" Class="pa-4 mb-3" Style="max-width: 40rem;">
+        <MudText Typo="Typo.h6">@_receipt.InstituteName</MudText>
+        @if (_receipt.InstituteAddress is { } address)
+        {
+            <MudText Typo="Typo.body2">@address</MudText>
+        }
+        <MudText Typo="Typo.body2">Phone: @_receipt.InstitutePhone</MudText>
+        <MudDivider Class="my-3" />
+
+        <MudStack Row="true" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+            <MudText Typo="Typo.subtitle1"><strong>Fee receipt</strong></MudText>
+            <MudText Typo="Typo.subtitle1">No. <strong>@_receipt.ReceiptNumber</strong></MudText>
+        </MudStack>
+        <MudText Typo="Typo.body2" Class="mb-3">Date: @_receipt.PaymentDate.ToString("dd MMM yyyy")</MudText>
+
+        <MudText Typo="Typo.body1">
+            Received from <MudLink Href="@($"students/{_receipt.StudentId}")"><strong>@_receipt.StudentName</strong></MudLink>
+            (Adm. no. @(_receipt.AdmissionNo + (_receipt.ClassGrade is { } g ? $", {g}" : "")))
+        </MudText>
+
+        <MudSimpleTable Dense="true" Elevation="0" Class="my-3">
+            <thead>
+                <tr><th>Towards</th><th>Batch</th><th style="text-align: right;">Amount</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var line in _receipt.Lines)
+                {
+                    <tr><td>@line.Title</td><td>@line.BatchName</td><td style="text-align: right;">@Money.Format(line.Amount)</td></tr>
+                }
+                @if (_receipt.Unallocated > 0)
+                {
+                    <tr><td colspan="2">Advance (adjusted against future fees)</td><td style="text-align: right;">@Money.Format(_receipt.Unallocated)</td></tr>
+                }
+                <tr><td colspan="2"><strong>Total received</strong></td><td style="text-align: right;"><strong>@Money.Format(_receipt.Amount)</strong></td></tr>
+            </tbody>
+        </MudSimpleTable>
+
+        <MudText Typo="Typo.body2"><em>@_receipt.AmountInWords</em></MudText>
+        <MudText Typo="Typo.body2">
+            Mode: @CollectFee.ModeLabel(_receipt.Mode)@(_receipt.ReferenceNo is { } r ? $" (Ref: {r})" : "")
+        </MudText>
+        @if (_receipt.Remarks is { } remarks)
+        {
+            <MudText Typo="Typo.body2">Remarks: @remarks</MudText>
+        }
+        <MudText Typo="Typo.body2">Balance due now: <strong>@Money.Format(_receipt.BalanceAfter)</strong></MudText>
+        <MudText Typo="Typo.caption" Class="mt-2 d-block">Received by @(_receipt.ReceivedByName ?? "-")</MudText>
+    </MudPaper>
+
+    @if (!_receipt.IsCancelled)
+    {
+        <MudPaper Outlined="true" Class="pa-4 mb-3" Style="max-width: 40rem;">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+                <MudText Typo="Typo.subtitle1">Receipt message to parent</MudText>
+                <MudStack Row="true" Spacing="1">
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" aria-label="Refresh" OnClick="LoadMessagesAsync" />
+                    <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Send"
+                               Disabled="_resending" OnClick="ResendAsync">Send again</MudButton>
+                </MudStack>
+            </MudStack>
+            @if (_messages.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mt-1">
+                    Not sent yet. It goes out automatically within a few seconds if the guardian agreed to WhatsApp (or SMS is
+                    on your plan); press refresh to check.
+                </MudText>
+            }
+            else
+            {
+                @foreach (var message in _messages)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mt-1" Wrap="Wrap.Wrap">
+                        <MudChip T="string" Size="Size.Small" Color="@MessageLabels.StatusColor(message.Status)">@message.Status</MudChip>
+                        <MudText Typo="Typo.body2">
+                            @MessageLabels.Channel(message.Channel) to @PhoneNumber.Format(message.ToPhone) · @MessageLabels.When(message.CreatedAt)
+                        </MudText>
+                        @if (message.Error is { } error)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Error">@error</MudText>
+                        }
+                    </MudStack>
+                }
+            }
+        </MudPaper>
+    }
+
+    @if (!_receipt.IsCancelled)
+    {
+        <AuthorizeView Policy="@Policies.CancelPayments">
+            @if (!_cancelling)
+            {
+                <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.Block"
+                           OnClick="() => _cancelling = true">Cancel this payment</MudButton>
+            }
+            else
+            {
+                <MudPaper Outlined="true" Class="pa-4" Style="max-width: 40rem;">
+                    <MudText Typo="Typo.subtitle1" Color="Color.Error">Cancel payment @_receipt.ReceiptNumber</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-2">
+                        The amount is taken off the dues it paid, and the receipt stays in the records marked CANCELLED.
+                        Record a new payment if needed.
+                    </MudText>
+                    <MudTextField @bind-Value="_reason" Label="Reason" Variant="Variant.Outlined" Required="true" />
+                    <ErrorSummary Errors="_errors" />
+                    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-2">
+                        <MudButton Variant="Variant.Text" OnClick="() => _cancelling = false">Keep payment</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" Disabled="_saving" OnClick="CancelAsync">Cancel payment</MudButton>
+                    </MudStack>
+                </MudPaper>
+            }
+        </AuthorizeView>
+    }
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private bool _loading = true;
+    private bool _cancelling;
+    private bool _saving;
+    private string? _reason;
+    private ReceiptData? _receipt;
+    private IReadOnlyList<Error>? _errors;
+    private IReadOnlyList<MessageLogItem> _messages = [];
+    private bool _resending;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _receipt = await PaymentSvc.GetReceiptAsync(Id);
+        if (_receipt is not null) await LoadMessagesAsync();
+        _loading = false;
+    }
+
+    // One DbContext per circuit: refresh and "send again" must not query at the same time.
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    private async Task LoadMessagesAsync()
+    {
+        await _dbLock.WaitAsync();
+        try
+        {
+            _messages = await MessagingSvc.ListForAsync(MessageRelated.Payment, Id);
+        }
+        finally
+        {
+            _dbLock.Release();
+        }
+    }
+
+    private async Task ResendAsync()
+    {
+        _resending = true;
+        Result result;
+        await _dbLock.WaitAsync();
+        try
+        {
+            result = await MessagingSvc.QueueReceiptAsync(Id);
+        }
+        finally
+        {
+            _dbLock.Release();
+        }
+        if (result.IsFailure)
+        {
+            Snackbar.Add(result.FirstError?.Message ?? "Could not send the receipt.", Severity.Error);
+        }
+        else
+        {
+            Snackbar.Add("Receipt queued. It goes out in a few seconds.", Severity.Success);
+            await Task.Delay(TimeSpan.FromSeconds(6));
+            await LoadMessagesAsync();
+        }
+        _resending = false;
+    }
+
+    private string WhatsAppLink(string phone)
+    {
+        var r = _receipt!;
+        var text = $"Dear {r.GuardianName ?? "Parent"}, we have received {Money.Format(r.Amount)} towards the fees of {r.StudentName}. " +
+                   $"Receipt no. {r.ReceiptNumber} dated {r.PaymentDate:dd MMM yyyy}. Balance due: {Money.Format(r.BalanceAfter)}. - {r.InstituteName}";
+        return PhoneNumber.WhatsAppLink(phone) + "?text=" + Uri.EscapeDataString(text);
+    }
+
+    private async Task CancelAsync()
+    {
+        _saving = true;
+        var result = await PaymentSvc.CancelAsync(Id, _reason ?? "");
+        _saving = false;
+        _errors = result.IsFailure ? result.Errors : null;
+        if (result.IsFailure) return;
+
+        Snackbar.Add("Payment cancelled.", Severity.Success);
+        _cancelling = false;
+        _receipt = await PaymentSvc.GetReceiptAsync(Id);
+    }
+}

@@ -2,10 +2,19 @@
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize]
 
+@using InstituteHub.Application.Attendance
+@using InstituteHub.Application.Billing
+@using InstituteHub.Application.Common
+@using InstituteHub.Application.Fees
+@using InstituteHub.Application.Payments
 @using InstituteHub.Application.Tenants
 @using InstituteHub.Domain.Tenants
 
 @inject TenantService Tenants
+@inject PaymentService PaymentSvc
+@inject FeeDueService DueService
+@inject AttendanceService AttendanceSvc
+@inject IFeatureService Plans
 
 <PageTitle>Dashboard – InstituteHub</PageTitle>
 
@@ -22,76 +31,159 @@ else if (_tenant is null)
 }
 else
 {
-    <MudText Typo="Typo.h5" GutterBottom="true">@_tenant.Name</MudText>
+    <div class="mb-3">
+        <MudText Typo="Typo.h5">@_tenant.Name</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">@DateTime.Today.ToString("dddd, dd MMMM yyyy")</MudText>
+    </div>
 
     @if (_tenant.Status == TenantStatus.Trial && _tenant.TrialDaysLeft is { } days)
     {
-        <MudAlert Severity="@(days <= 3 ? Severity.Warning : Severity.Info)" Dense="true" Class="mb-4">
+        <MudAlert Severity="@(days <= 3 ? Severity.Warning : Severity.Info)" Dense="true" Class="mb-3">
             Free trial: @days @(days == 1 ? "day" : "days") left on the @(_tenant.PlanName ?? "trial") plan.
         </MudAlert>
     }
 
-    @if (_checklist is { IsComplete: false } checklist)
+    @if (_usage is { UsedPercent: >= 90 } usage)
     {
-        <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
-                <div>
-                    <MudText Typo="Typo.subtitle1">Finish setting up your institute</MudText>
-                    <MudText Typo="Typo.body2">@checklist.CompletedSteps of @checklist.TotalSteps steps done</MudText>
-                </div>
-                <MudButton Href="onboarding" Variant="Variant.Filled" Color="Color.Primary">Continue setup</MudButton>
-            </MudStack>
-            <MudProgressLinear Value="@(100.0 * checklist.CompletedSteps / checklist.TotalSteps)" Color="Color.Primary" Class="mt-3" Rounded="true" />
-        </MudPaper>
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-3">
+            You have @usage.ActiveStudents of @usage.Limits.MaxStudents active students allowed on your plan.
+        </MudAlert>
     }
 
-    @* Collection figures arrive with the Fees module (weeks 5–6) and full dashboard (week 8). *@
-    <MudGrid Spacing="2">
-        <MudItem xs="6" md="3">
-            <MudPaper Class="pa-4" Outlined="true">
-                <MudText Typo="Typo.caption">Active students</MudText>
-                <MudText Typo="Typo.h5">@(_checklist?.StudentCount ?? 0)</MudText>
+    <AuthorizeView Policy="@Policies.ManageInstitute" Context="owner">
+        @if (_checklist is { IsComplete: false } checklist)
+        {
+            <MudPaper Class="pa-4 mb-3" Elevation="0" Outlined="true">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+                    <div>
+                        <MudText Typo="Typo.subtitle1">Finish setting up your institute</MudText>
+                        <MudText Typo="Typo.body2">@checklist.CompletedSteps of @checklist.TotalSteps steps done</MudText>
+                    </div>
+                    <MudButton Href="onboarding" Variant="Variant.Filled" Color="Color.Primary">Continue setup</MudButton>
+                </MudStack>
+                <MudProgressLinear Value="@(100.0 * checklist.CompletedSteps / checklist.TotalSteps)" Color="Color.Primary" Class="mt-3" Rounded="true" />
+            </MudPaper>
+        }
+    </AuthorizeView>
+
+    @if (_collection is not null)
+    {
+        @* Money figures: owner and office staff only (the services return null for teachers). *@
+        <MudGrid Spacing="2" Class="mb-1">
+            <MudItem xs="6" md="3">
+                <StatTile Label="Today's collection" Value="@Money.Format(_collection.Today)"
+                          Detail="@($"{_collection.PaymentsToday} receipt(s)")" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <StatTile Label="This month" Value="@Money.Format(_collection.ThisMonth)" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <StatTile Label="Pending dues" Value="@(_pending is null ? "–" : Money.Format(_pending.TotalBalance))"
+                          Detail="@(_pending is null ? null : $"{_pending.StudentCount} student(s)")" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <StatTile Label="Overdue" Value="@(_overdue is null ? "–" : Money.Format(_overdue.TotalBalance))"
+                          Detail="@(_overdue is null ? null : $"{_overdue.StudentCount} student(s)")"
+                          Highlight="@(_overdue is { TotalBalance: > 0 })" />
+            </MudItem>
+        </MudGrid>
+        <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mb-3" Wrap="Wrap.Wrap">
+            @if (_overdue is { StudentCount: > 0 })
+            {
+                <MudButton Href="fees/dues" Size="Size.Small" Variant="Variant.Text" Color="Color.Error">See overdue students</MudButton>
+            }
+            <MudButton Href="reports" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">Open reports</MudButton>
+        </MudStack>
+    }
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="7">
+            <MudPaper Outlined="true" Class="pa-4" Style="height: 100%;">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                    <MudText Typo="Typo.subtitle1">Today's classes</MudText>
+                    @if (_usage is not null)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@_usage.ActiveStudents active students</MudText>
+                    }
+                </MudStack>
+                @if (TodaysClasses.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No classes are scheduled today.</MudText>
+                }
+                @foreach (var b in TodaysClasses)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="py-2" Style="border-bottom: 1px solid var(--mud-palette-lines-default);">
+                        <MudIcon Icon="@(b.MarkedToday ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.Schedule)"
+                                 Color="@(b.MarkedToday ? Color.Success : Color.Default)" Size="Size.Small" />
+                        <div class="flex-grow-1">
+                            <MudText Typo="Typo.body2"><strong>@b.Name</strong></MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@b.Schedule</MudText>
+                        </div>
+                        @if (b.MarkedToday)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Text">Done</MudChip>
+                        }
+                        else
+                        {
+                            <MudButton Href="@($"attendance?batch={b.BatchId}")" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary">Mark</MudButton>
+                        }
+                    </MudStack>
+                }
             </MudPaper>
         </MudItem>
-        <MudItem xs="6" md="3">
-            <MudPaper Class="pa-4" Outlined="true">
-                <MudText Typo="Typo.caption">Today's collection</MudText>
-                <MudText Typo="Typo.h5">₹0</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="6" md="3">
-            <MudPaper Class="pa-4" Outlined="true">
-                <MudText Typo="Typo.caption">This month</MudText>
-                <MudText Typo="Typo.h5">₹0</MudText>
-            </MudPaper>
-        </MudItem>
-        <MudItem xs="6" md="3">
-            <MudPaper Class="pa-4" Outlined="true">
-                <MudText Typo="Typo.caption">Pending dues</MudText>
-                <MudText Typo="Typo.h5">₹0</MudText>
+
+        <MudItem xs="12" md="5">
+            <MudPaper Outlined="true" Class="pa-4" Style="height: 100%;">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Quick actions</MudText>
+                <MudStack Spacing="2">
+                    <AuthorizeView Policy="@Policies.RecordPayments" Context="fees">
+                        <MudButton Href="payments/new" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                                   StartIcon="@Icons.Material.Filled.CurrencyRupee">Collect fee</MudButton>
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@Policies.ManageStudents" Context="students">
+                        <MudButton Href="students/new" Variant="Variant.Outlined" FullWidth="true" StartIcon="@Icons.Material.Filled.PersonAdd">Admit student</MudButton>
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@Policies.MarkAttendance" Context="attendance">
+                        <MudButton Href="attendance" Variant="Variant.Outlined" FullWidth="true" StartIcon="@Icons.Material.Filled.FactCheck">Mark attendance</MudButton>
+                    </AuthorizeView>
+                    <AuthorizeView Policy="@Policies.SendReminders" Context="reminders">
+                        <MudButton Href="reminders" Variant="Variant.Outlined" FullWidth="true" StartIcon="@Icons.Material.Filled.Chat">Reminders</MudButton>
+                    </AuthorizeView>
+                </MudStack>
             </MudPaper>
         </MudItem>
     </MudGrid>
-
-    <MudText Typo="Typo.subtitle1" Class="mt-6 mb-2">Quick actions</MudText>
-    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="2">
-        <MudButton Href="students/new" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PersonAdd">Admit student</MudButton>
-        <MudButton Href="payments" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CurrencyRupee">Collect fee</MudButton>
-        <MudButton Href="attendance" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.FactCheck">Mark attendance</MudButton>
-    </MudStack>
 }
 
 @code {
     private bool _loading = true;
     private TenantSummary? _tenant;
     private OnboardingChecklist? _checklist;
+    private CollectionSummary? _collection;
+    private PendingDues? _pending;
+    private PendingDues? _overdue;
+    private PlanUsage? _usage;
+    private IReadOnlyList<TodayBatch> _batches = [];
+
+    private List<TodayBatch> TodaysClasses => _batches.Where(b => b.ScheduledToday).ToList();
 
     protected override async Task OnInitializedAsync()
     {
+        // Sequential awaits: one DbContext per circuit must not run queries in parallel.
         _tenant = await Tenants.GetCurrentAsync();
         if (_tenant is not null)
         {
             _checklist = await Tenants.GetOnboardingChecklistAsync();
+            _usage = await Plans.GetUsageAsync();
+            _batches = await AttendanceSvc.GetTodayAsync();
+
+            // Null for teachers: money figures are for the owner and office staff only.
+            _collection = await PaymentSvc.GetCollectionSummaryAsync();
+            if (_collection is not null)
+            {
+                _pending = await DueService.GetPendingDuesAsync(new PendingDuesQuery(DueFilter.AllPending, PageSize: 1));
+                _overdue = await DueService.GetPendingDuesAsync(new PendingDuesQuery(DueFilter.Overdue, PageSize: 1));
+            }
         }
         _loading = false;
     }

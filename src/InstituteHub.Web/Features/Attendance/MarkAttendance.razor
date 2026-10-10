@@ -178,6 +178,25 @@ else
 
     private string DateLabel => SelectedDate == Clock.Today() ? "today" : SelectedDate.ToString("ddd, dd MMM yyyy");
 
+    // Blazor Server shares one DbContext per circuit. A double tap on a batch card, or changing the date
+    // while a register is still loading, would otherwise start a second query before the first finished
+    // ("A second operation was started on this context instance"). Every handler that touches the
+    // database goes through RunExclusiveAsync; taps that arrive while one is running are ignored.
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    private async Task RunExclusiveAsync(Func<Task> work)
+    {
+        if (!await _dbLock.WaitAsync(0)) return; // something is already loading/saving – ignore this tap
+        try
+        {
+            await work();
+        }
+        finally
+        {
+            _dbLock.Release();
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         if (AuthenticationState is not null)
@@ -188,34 +207,40 @@ else
 
         _date = DateOnly.TryParse(DateFromQuery, out var d) ? d.ToDateTime(TimeOnly.MinValue) : Clock.Today().ToDateTime(TimeOnly.MinValue);
 
-        if (BatchFromQuery is { } batchId)
+        await RunExclusiveAsync(async () =>
         {
-            await OpenSheetAsync(batchId);
-        }
-        else
-        {
-            await LoadBatchesAsync();
-        }
+            if (BatchFromQuery is { } batchId)
+            {
+                await LoadSheetAsync(batchId);
+            }
+            else
+            {
+                await LoadBatchesAsync();
+            }
+        });
         _loading = false;
     }
 
     private async Task LoadBatchesAsync() => _batches = await Service.GetTodayAsync(SelectedDate);
 
-    private async Task OnDateChanged(DateTime? value)
+    private Task OnDateChanged(DateTime? value) => RunExclusiveAsync(async () =>
     {
         _date = value ?? DateTime.Today;
         _errors = null;
         if (_sheet is not null)
         {
-            await OpenSheetAsync(_sheet.BatchId);
+            await LoadSheetAsync(_sheet.BatchId);
         }
         else
         {
             await LoadBatchesAsync();
         }
-    }
+    });
 
-    private async Task OpenSheetAsync(Guid batchId)
+    private Task OpenSheetAsync(Guid batchId) => RunExclusiveAsync(() => LoadSheetAsync(batchId));
+
+    // Callers must already hold _dbLock.
+    private async Task LoadSheetAsync(Guid batchId)
     {
         _errors = null;
         _sheet = await Service.GetSheetAsync(batchId, SelectedDate);
@@ -227,13 +252,13 @@ else
         }
     }
 
-    private async Task BackToBatches()
+    private Task BackToBatches() => RunExclusiveAsync(async () =>
     {
         _sheet = null;
         _rows = [];
         _errors = null;
         await LoadBatchesAsync();
-    }
+    });
 
     private int Count(AttendanceStatus status) => _rows.Count(r => r.Status == status);
 
@@ -248,27 +273,32 @@ else
         foreach (var row in _rows) row.Status = AttendanceStatus.Present;
     }
 
-    private async Task SaveAsync()
+    private Task SaveAsync() => RunExclusiveAsync(async () =>
     {
         if (_sheet is null) return;
         _saving = true;
         _errors = null;
-
-        var result = await Service.SaveAsync(new SaveAttendanceRequest(
-            _sheet.BatchId, _sheet.Date,
-            _rows.Select(r => new AttendanceMark(r.StudentId, r.Status, r.Remark)).ToList()));
-
-        _saving = false;
-        if (result.IsFailure)
+        try
         {
-            _errors = result.Errors;
-            return;
-        }
+            var result = await Service.SaveAsync(new SaveAttendanceRequest(
+                _sheet.BatchId, _sheet.Date,
+                _rows.Select(r => new AttendanceMark(r.StudentId, r.Status, r.Remark)).ToList()));
 
-        var s = result.Value;
-        Snackbar.Add($"Attendance saved: {s.Present + s.Late} present, {s.Absent} absent.", Severity.Success);
-        await OpenSheetAsync(_sheet.BatchId);
-    }
+            if (result.IsFailure)
+            {
+                _errors = result.Errors;
+                return;
+            }
+
+            var s = result.Value;
+            Snackbar.Add($"Attendance saved: {s.Present + s.Late} present, {s.Absent} absent.", Severity.Success);
+            await LoadSheetAsync(_sheet.BatchId);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    });
 
     private sealed class RowModel(Guid studentId, string admissionNo, string fullName)
     {

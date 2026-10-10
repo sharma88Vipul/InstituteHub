@@ -1,0 +1,17 @@
+@* A small figure card: label above, value below (dashboard and reports). *@
+
+<MudPaper Class="pa-4" Outlined="true" Style="height: 100%;">
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">@Label</MudText>
+    <MudText Typo="Typo.h5" Color="@(Highlight ? Color.Error : Color.Default)">@Value</MudText>
+    @if (Detail is not null)
+    {
+        <MudText Typo="Typo.caption">@Detail</MudText>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+    [Parameter] public string? Detail { get; set; }
+    [Parameter] public bool Highlight { get; set; }
+}

@@ -1,0 +1,130 @@
+@page "/fees/dues"
+@attribute [Authorize(Policy = Policies.RecordPayments)]
+
+@using InstituteHub.Application.Batches
+@using InstituteHub.Application.Fees
+
+@inject FeeDueService DueService
+@inject BatchService BatchSvc
+
+<PageTitle>Pending dues – InstituteHub</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-3">Pending dues</MudText>
+
+<MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" Class="mb-2">
+    @foreach (var (filter, label) in Filters)
+    {
+        <MudButton Size="Size.Small" Color="Color.Primary" Variant="@(_filter == filter ? Variant.Filled : Variant.Outlined)"
+                   OnClick="@(async () => { _filter = filter; await ReloadAsync(); })">@label</MudButton>
+    }
+</MudStack>
+
+<MudGrid Spacing="2" Class="mb-2">
+    <MudItem xs="12" sm="6">
+        <MudTextField T="string" Value="_search" ValueChanged="@(async s => { _search = s; await ReloadAsync(); })"
+                      Immediate="true" DebounceInterval="400" Placeholder="Search student or admission no." Clearable="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudSelect T="Guid?" Value="_batchId" ValueChanged="@(async b => { _batchId = b; await ReloadAsync(); })" Label="Batch"
+                   Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="Guid?" Value="@((Guid?)null)">All batches</MudSelectItem>
+            @foreach (var b in _batches)
+            {
+                <MudSelectItem T="Guid?" Value="@((Guid?)b.Id)">@b.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+</MudGrid>
+
+@if (_dues is not null)
+{
+    <MudAlert Severity="@(_dues.TotalBalance > 0 && _filter == DueFilter.Overdue ? Severity.Warning : Severity.Info)" Dense="true" Class="mb-2">
+        <strong>@Money.Format(_dues.TotalBalance)</strong> pending from @_dues.StudentCount student(s) · @_dues.TotalCount due(s)
+    </MudAlert>
+}
+
+<MudTable T="PendingDueRow" Items="_dues?.Rows" Loading="_loading" Dense="true" Hover="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>Student</MudTh>
+        <MudTh>Due</MudTh>
+        <MudTh>Due date</MudTh>
+        <MudTh Style="text-align: right;">Balance</MudTh>
+        <MudTh>Parent</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Student">
+            <MudLink Href="@($"students/{context.StudentId}")">@context.StudentName</MudLink>
+            <div class="mud-text-secondary" style="font-size: .8rem;">@context.AdmissionNo · @context.BatchName</div>
+        </MudTd>
+        <MudTd DataLabel="Due">@context.Title</MudTd>
+        <MudTd DataLabel="Due date">
+            @context.DueDate.ToString("dd MMM yyyy")
+            @if (context.DaysOverdue > 0)
+            {
+                <MudChip T="string" Size="Size.Small" Color="@(context.DaysOverdue > 30 ? Color.Error : Color.Warning)">@context.DaysOverdue days late</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Balance" Style="text-align: right;"><strong>@Money.Format(context.Balance)</strong></MudTd>
+        <MudTd DataLabel="Parent">
+            @if (context.GuardianPhone is { } phone)
+            {
+                <MudLink Href="@($"tel:{phone}")">@PhoneNumber.Format(phone)</MudLink>
+                <MudIconButton Href="@PhoneNumber.WhatsAppLink(phone)" Target="_blank" Icon="@Icons.Custom.Brands.WhatsApp"
+                               Color="Color.Success" Size="Size.Small" aria-label="WhatsApp" />
+            }
+        </MudTd>
+        <MudTd>
+            <MudButton Href="@($"payments/new?studentId={context.StudentId}")" Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary">Collect</MudButton>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4">Nothing pending here.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@if (_dues is { TotalPages: > 1 })
+{
+    <div class="d-flex justify-center mt-3">
+        <MudPagination Count="_dues.TotalPages" Selected="_page" SelectedChanged="@(async p => { _page = p; await LoadAsync(); })" Color="Color.Primary" />
+    </div>
+}
+
+<MudText Typo="Typo.caption" Class="mt-2 d-block">Bulk WhatsApp/SMS reminders arrive in week 7.</MudText>
+
+@code {
+    private static readonly (DueFilter Filter, string Label)[] Filters =
+    [
+        (DueFilter.Overdue, "Overdue"),
+        (DueFilter.DueThisWeek, "Due this week"),
+        (DueFilter.AllPending, "All pending"),
+    ];
+
+    private DueFilter _filter = DueFilter.Overdue;
+    private Guid? _batchId;
+    private string? _search;
+    private int _page = 1;
+    private bool _loading = true;
+    private PendingDues? _dues;
+    private IReadOnlyList<BatchOption> _batches = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _batches = await BatchSvc.GetOptionsAsync();
+        await LoadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _dues = await DueService.GetPendingDuesAsync(new PendingDuesQuery(_filter, _batchId, _search, _page));
+        _loading = false;
+    }
+}

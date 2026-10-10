@@ -1,8 +1,4 @@
-@page "/fees/dues"
-@page "/payments"
-@page "/reminders"
-@page "/reports"
-@page "/settings"
+@page "/admin"
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize]
 
@@ -31,11 +27,7 @@
         var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
         (_title, _when) = path switch
         {
-            "fees/dues" => ("Pending dues", "The dues list arrives in week 6."),
-            "payments" => ("Payments", "Fee collection and receipts arrive in week 6."),
-            "reminders" => ("Reminders", "WhatsApp/SMS reminders arrive in week 7."),
-            "reports" => ("Reports", "Reports arrive in week 8."),
-            "settings" => ("Settings", "Institute profile, logo and users arrive in week 8."),
+            "admin" => ("Platform admin", "Listing institutes, extending trials and plan changes come after the pilot. Use the Background jobs dashboard meanwhile."),
             _ => ("This page", "It is on the build plan."),
         };
     }

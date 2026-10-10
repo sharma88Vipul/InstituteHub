@@ -1,0 +1,287 @@
+@page "/payments/new"
+@attribute [Authorize(Policy = Policies.RecordPayments)]
+
+@using InstituteHub.Application.Payments
+@using InstituteHub.Application.Students
+@using InstituteHub.Domain.Fees
+
+@inject PaymentService PaymentSvc
+@inject StudentService StudentSvc
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>Collect fee – InstituteHub</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-3">Collect fee</MudText>
+
+@if (_view is null)
+{
+    <MudPaper Outlined="true" Class="pa-4">
+        <MudAutocomplete T="StudentListItem" Label="Find the student" Placeholder="Name, admission no. or parent phone"
+                         SearchFunc="SearchStudentsAsync" ToStringFunc="@(s => s is null ? "" : $"{s.FullName} ({s.AdmissionNo})")"
+                         ValueChanged="OnStudentPicked" DebounceInterval="350" MinCharacters="2"
+                         Variant="Variant.Outlined" AdornmentIcon="@Icons.Material.Filled.Search" ResetValueOnEmptyText="true" />
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-2" />
+        }
+    </MudPaper>
+}
+else
+{
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Wrap="Wrap.Wrap">
+            <div>
+                <MudLink Href="@($"students/{_view.StudentId}")" Typo="Typo.h6">@_view.StudentName</MudLink>
+                <MudText Typo="Typo.body2">
+                    @_view.AdmissionNo @(_view.ClassGrade is { } g ? $"· {g}" : "")
+                    @if (_view.GuardianName is { } guardian)
+                    {
+                        <span> · @guardian @PhoneNumber.Format(_view.GuardianPhone)</span>
+                    }
+                </MudText>
+            </div>
+            <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="ChangeStudent">Change student</MudButton>
+        </MudStack>
+        <MudStack Row="true" Spacing="4" Wrap="Wrap.Wrap" Class="mt-2">
+            <div><MudText Typo="Typo.caption">Total due</MudText><MudText Typo="Typo.h6">@Money.Format(_view.TotalBalance)</MudText></div>
+            <div><MudText Typo="Typo.caption">Overdue</MudText><MudText Typo="Typo.h6" Color="@(_view.OverdueBalance > 0 ? Color.Error : Color.Default)">@Money.Format(_view.OverdueBalance)</MudText></div>
+            @if (_view.AdvanceCredit > 0)
+            {
+                <div><MudText Typo="Typo.caption">Advance with us</MudText><MudText Typo="Typo.h6" Color="Color.Success">@Money.Format(_view.AdvanceCredit)</MudText></div>
+            }
+        </MudStack>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="4">
+                <MudNumericField T="decimal" Value="_amount" ValueChanged="OnAmountChanged" Label="Amount received (₹)" Min="0"
+                                 Variant="Variant.Outlined" Format="N0" Immediate="true" Required="true" />
+            </MudItem>
+            <MudItem xs="6" sm="4">
+                <MudSelect T="PaymentMode" @bind-Value="_mode" Label="Mode" Variant="Variant.Outlined">
+                    @foreach (var mode in Enum.GetValues<PaymentMode>())
+                    {
+                        <MudSelectItem T="PaymentMode" Value="mode">@ModeLabel(mode)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" sm="4">
+                <MudDatePicker @bind-Date="_date" Label="Payment date" DateFormat="dd-MM-yyyy" MaxDate="DateTime.Today" Variant="Variant.Outlined" />
+            </MudItem>
+            @if (_mode != PaymentMode.Cash)
+            {
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_reference" Label="@(_mode == PaymentMode.Cheque ? "Cheque number" : "Reference / UTR number")" Variant="Variant.Outlined" />
+                </MudItem>
+            }
+            <MudItem xs="12" sm="6">
+                <MudTextField @bind-Value="_remarks" Label="Remarks (optional)" Variant="Variant.Outlined" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Outlined="true" Class="pa-4 mb-3">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="mb-2">
+            <MudText Typo="Typo.subtitle1">How this payment is applied</MudText>
+            @if (_view.Dues.Count > 0)
+            {
+                <MudSwitch T="bool" Value="_manual" ValueChanged="OnManualChanged" Label="Adjust split" Color="Color.Primary" />
+            }
+        </MudStack>
+
+        @if (_view.Dues.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true">No open dues. The whole amount will be kept as advance.</MudAlert>
+        }
+        else
+        {
+            <MudTable T="OpenDue" Items="_view.Dues" Dense="true" Elevation="0" Breakpoint="Breakpoint.Xs">
+                <HeaderContent>
+                    <MudTh>Due</MudTh>
+                    <MudTh>Due date</MudTh>
+                    <MudTh Style="text-align: right;">Balance</MudTh>
+                    <MudTh Style="text-align: right;">Paying now</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Due">@context.Title <span class="mud-text-secondary">· @context.BatchName</span></MudTd>
+                    <MudTd DataLabel="Due date">
+                        <MudText Typo="Typo.body2" Color="@(context.IsOverdue ? Color.Error : Color.Default)">@context.DueDate.ToString("dd MMM yyyy")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Balance" Style="text-align: right;">@Money.Format(context.Balance)</MudTd>
+                    <MudTd DataLabel="Paying now" Style="text-align: right;">
+                        @if (_manual)
+                        {
+                            <MudNumericField T="decimal" Value="@ManualAmount(context.Id)" ValueChanged="@(v => SetManual(context.Id, v))"
+                                             Min="0" Max="context.Balance" Format="N0" Margin="Margin.Dense" Variant="Variant.Outlined"
+                                             Style="max-width: 9rem; margin-left: auto;" />
+                        }
+                        else
+                        {
+                            <strong>@(AutoAmount(context.Id) is decimal a && a > 0 ? Money.Format(a) : "–")</strong>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+
+        @if (Unallocated > 0)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">@Money.Format(Unallocated) will be kept as advance for future fees.</MudAlert>
+        }
+        @if (_manual && ManualTotal > _amount)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">The split adds up to @Money.Format(ManualTotal), more than the amount received.</MudAlert>
+        }
+    </MudPaper>
+
+    <ErrorSummary Errors="_errors" />
+
+    <div class="collect-save-bar">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" FullWidth="true"
+                   Disabled="@(_saving || _amount <= 0)" OnClick="SaveAsync" StartIcon="@Icons.Material.Filled.Receipt">
+            @(_saving ? "Saving…" : $"Save and print receipt · {Money.Format(_amount)}")
+        </MudButton>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "studentId")]
+    private Guid? StudentIdFromQuery { get; set; }
+
+    // Blazor Server shares one DbContext per circuit; never let two queries overlap (e.g. fast typing in search).
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    private CollectFeeView? _view;
+    private bool _loading;
+    private bool _saving;
+    private decimal _amount;
+    private PaymentMode _mode = PaymentMode.Cash;
+    private DateTime? _date;
+    private string? _reference;
+    private string? _remarks;
+    private bool _manual;
+    private Dictionary<Guid, decimal> _manualSplit = new();
+    private AllocationPlan _plan = new([], 0);
+    private IReadOnlyList<Error>? _errors;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _date = Clock.Today().ToDateTime(TimeOnly.MinValue);
+        if (StudentIdFromQuery is { } id) await LoadStudentAsync(id);
+    }
+
+    private async Task<IEnumerable<StudentListItem>> SearchStudentsAsync(string? text, CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.Trim().Length < 2) return [];
+        await _dbLock.WaitAsync(token);
+        try
+        {
+            return (await StudentSvc.SearchAsync(new StudentQuery(text, null, null, 1, 10), token)).Items;
+        }
+        finally
+        {
+            _dbLock.Release();
+        }
+    }
+
+    private async Task OnStudentPicked(StudentListItem? student)
+    {
+        if (student is not null) await LoadStudentAsync(student.Id);
+    }
+
+    private async Task LoadStudentAsync(Guid studentId)
+    {
+        _loading = true;
+        await _dbLock.WaitAsync();
+        try
+        {
+            _view = await PaymentSvc.GetCollectViewAsync(studentId);
+        }
+        finally
+        {
+            _dbLock.Release();
+            _loading = false;
+        }
+
+        if (_view is null)
+        {
+            Snackbar.Add("Student not found.", Severity.Warning);
+            return;
+        }
+        _manual = false;
+        _errors = null;
+        OnAmountChanged(_view.OverdueBalance > 0 ? _view.OverdueBalance : _view.Dues.FirstOrDefault()?.Balance ?? 0);
+    }
+
+    private void ChangeStudent()
+    {
+        _view = null;
+        _errors = null;
+    }
+
+    private void OnAmountChanged(decimal amount)
+    {
+        _amount = amount;
+        _plan = PaymentAllocator.OldestFirst(amount, _view?.Dues.Select(d => new AllocatableDue(d.Id, d.DueDate, d.Balance)) ?? Enumerable.Empty<AllocatableDue>());
+    }
+
+    private void OnManualChanged(bool manual)
+    {
+        _manual = manual;
+        _manualSplit = _plan.Allocations.ToDictionary(a => a.FeeDueId, a => a.Amount);
+    }
+
+    private decimal? AutoAmount(Guid dueId) => _plan.Allocations.FirstOrDefault(a => a.FeeDueId == dueId)?.Amount;
+
+    private decimal ManualAmount(Guid dueId) => _manualSplit.TryGetValue(dueId, out var v) ? v : 0;
+
+    private void SetManual(Guid dueId, decimal value) => _manualSplit[dueId] = value;
+
+    private decimal ManualTotal => _manualSplit.Values.Sum();
+
+    private decimal Unallocated => _manual ? Math.Max(0, _amount - ManualTotal) : _plan.Unallocated;
+
+    private async Task SaveAsync()
+    {
+        if (_view is null) return;
+        _saving = true;
+        _errors = null;
+
+        var manual = _manual
+            ? _manualSplit.Where(kv => kv.Value > 0).Select(kv => new Allocation(kv.Key, kv.Value)).ToList()
+            : null;
+
+        Result<Guid> result;
+        await _dbLock.WaitAsync();
+        try
+        {
+            result = await PaymentSvc.RecordAsync(new RecordPaymentRequest(
+                _view.StudentId, DateOnly.FromDateTime(_date ?? DateTime.Today), _amount, _mode,
+                _mode == PaymentMode.Cash ? null : _reference, _remarks, manual));
+        }
+        finally
+        {
+            _dbLock.Release();
+            _saving = false;
+        }
+
+        if (result.IsFailure)
+        {
+            _errors = result.Errors;
+            return;
+        }
+
+        Snackbar.Add("Payment saved.", Severity.Success);
+        Navigation.NavigateTo($"payments/{result.Value}");
+    }
+
+    internal static string ModeLabel(PaymentMode mode) => mode switch
+    {
+        PaymentMode.BankTransfer => "Bank transfer",
+        PaymentMode.Online => "Online",
+        _ => mode.ToString(),
+    };
+}

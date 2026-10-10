@@ -1,6 +1,7 @@
 using FluentValidation;
 using InstituteHub.Application.Abstractions;
 using InstituteHub.Application.Batches;
+using InstituteHub.Application.Billing;
 using InstituteHub.Application.Common;
 using InstituteHub.Domain.Batches;
 using InstituteHub.Domain.Students;
@@ -15,6 +16,7 @@ public sealed class StudentService(
     ICurrentUser user,
     IClock clock,
     EnrollmentService enrollments,
+    IFeatureService features,
     IValidator<AdmissionRequest> admissionValidator,
     IValidator<UpdateStudentRequest> updateValidator,
     IValidator<GuardianInput> guardianValidator)
@@ -149,15 +151,8 @@ public sealed class StudentService(
         if (!validation.IsValid) return Result.Invalid<Guid>(validation);
 
         // Plan limit: active students < max_students of the current subscription plan.
-        var maxStudents = await db.TenantSubscriptions
-            .OrderByDescending(s => s.CurrentPeriodEnd)
-            .Select(s => (int?)s.Plan!.MaxStudents)
-            .FirstOrDefaultAsync(ct);
-        if (maxStudents is { } max && await db.Students.CountAsync(s => s.Status == StudentStatus.Active, ct) >= max)
-        {
-            return Result.Failure<Guid>(Error.LimitReached(
-                $"Your plan allows up to {max} active students. Upgrade your plan or mark students who left as 'Left'."));
-        }
+        var limit = await features.CanAddStudentsAsync(1, ct);
+        if (limit.IsFailure) return Result.Failure<Guid>(limit.Errors.ToArray());
 
         var admissionNo = string.IsNullOrWhiteSpace(request.AdmissionNo)
             ? await NextAdmissionNoAsync(ct)
@@ -253,6 +248,13 @@ public sealed class StudentService(
 
         var student = await db.Students.Include(s => s.Enrollments).FirstOrDefaultAsync(s => s.Id == id, ct);
         if (student is null) return Result.Failure(Error.NotFound("Student"));
+
+        // Making an inactive/left student active again counts against the plan's student limit.
+        if (status == StudentStatus.Active && student.Status != StudentStatus.Active)
+        {
+            var limit = await features.CanAddStudentsAsync(1, ct);
+            if (limit.IsFailure) return limit;
+        }
 
         student.Status = status;
         if (status == StudentStatus.Left)

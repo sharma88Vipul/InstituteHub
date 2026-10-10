@@ -1,10 +1,13 @@
 @using InstituteHub.Application.Fees
+@using InstituteHub.Application.Payments
 @using InstituteHub.Domain.Fees
+@using InstituteHub.Web.Features.Fees
 
 @inject FeeDueService DueService
+@inject PaymentService PaymentSvc
 @inject ISnackbar Snackbar
 
-@* Fees tab on the student profile: every due, oldest first, with totals. Payments arrive in week 6. *@
+@* Fees tab on the student profile: every due, oldest first, with totals, and the payments made. *@
 
 @if (!_loaded)
 {
@@ -14,11 +17,19 @@ else if (_fees is null)
 {
     <MudAlert Severity="Severity.Info" Dense="true">Fee details are visible to the owner and office staff.</MudAlert>
 }
-else if (_fees.Dues.Count == 0)
+else
+{
+    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-2">
+        <MudButton Href="@($"payments/new?studentId={StudentId}")" Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.CurrencyRupee">Collect fee</MudButton>
+    </MudStack>
+}
+
+@if (_fees is { Dues.Count: 0 })
 {
     <MudText>No fee dues yet. Dues are created when the student joins a batch with a fee plan.</MudText>
 }
-else
+else if (_fees is not null)
 {
     <MudGrid Spacing="2" Class="mb-3">
         <MudItem xs="6" sm="3">
@@ -88,7 +99,31 @@ else
             </MudTd>
         </RowTemplate>
     </MudTable>
-    <MudText Typo="Typo.caption" Class="mt-1 d-block">Fee collection and receipts arrive in week 6.</MudText>
+}
+
+@if (_payments is { Items.Count: > 0 })
+{
+    <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">Payments</MudText>
+    <MudTable T="PaymentListItem" Items="_payments.Items" Dense="true" Elevation="0" Breakpoint="Breakpoint.Xs">
+        <HeaderContent>
+            <MudTh>Receipt</MudTh>
+            <MudTh>Date</MudTh>
+            <MudTh>Mode</MudTh>
+            <MudTh Style="text-align: right;">Amount</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Receipt">
+                <MudLink Href="@($"payments/{context.Id}")">@context.ReceiptNumber</MudLink>
+                @if (context.IsCancelled)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error">Cancelled</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Date">@context.PaymentDate.ToString("dd MMM yyyy")</MudTd>
+            <MudTd DataLabel="Mode">@CollectFee.ModeLabel(context.Mode)</MudTd>
+            <MudTd DataLabel="Amount" Style="text-align: right;">@Money.Format(context.Amount)</MudTd>
+        </RowTemplate>
+    </MudTable>
 }
 
 @code {
@@ -96,11 +131,16 @@ else
 
     private bool _loaded;
     private StudentFees? _fees;
+    private PaymentList? _payments;
     private IReadOnlyList<Error>? _errors;
 
     protected override async Task OnParametersSetAsync()
     {
         _fees = await DueService.GetStudentFeesAsync(StudentId);
+        if (_fees is not null)
+        {
+            _payments = await PaymentSvc.ListAsync(new PaymentQuery(StudentId: StudentId, PageSize: 20));
+        }
         _loaded = true;
     }
 

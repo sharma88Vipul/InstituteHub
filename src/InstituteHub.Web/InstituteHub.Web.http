@@ -1,0 +1,24 @@
+# Manual requests for Visual Studio (open this file and click "Send request").
+# Start the app with the "https" profile first.
+
+@host = https://localhost:7227
+
+### Health check
+GET {{host}}/health
+
+### Delivery update from the WhatsApp/SMS provider (week 7).
+# In Development with an empty Messaging:WebhookSecret the signature is not checked.
+# Copy a provider message id ("fake-…") from the log or the Seq/console output of FakeMessageSender.
+POST {{host}}/webhooks/whatsapp
+Content-Type: application/json
+
+{ "messageId": "fake-paste-the-id-here", "status": "read" }
+
+### Several updates at once
+POST {{host}}/webhooks/whatsapp
+Content-Type: application/json
+
+[
+  { "messageId": "fake-paste-the-id-here", "status": "delivered" },
+  { "messageId": "fake-another-id", "status": "failed", "error": "Number is not on WhatsApp" }
+]

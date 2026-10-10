@@ -1,0 +1,126 @@
+@page "/payments"
+@attribute [Authorize(Policy = Policies.RecordPayments)]
+
+@using InstituteHub.Application.Payments
+@using InstituteHub.Domain.Fees
+
+@inject PaymentService PaymentSvc
+@inject IClock Clock
+@inject NavigationManager Navigation
+
+<PageTitle>Payments – InstituteHub</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-3">
+    <MudText Typo="Typo.h5">Payments</MudText>
+    <MudButton Href="payments/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CurrencyRupee">Collect fee</MudButton>
+</MudStack>
+
+<MudGrid Spacing="2" Class="mb-2">
+    <MudItem xs="6" sm="3">
+        <MudDatePicker Date="_from" DateChanged="@(async d => { _from = d; await ReloadAsync(); })" Label="From" DateFormat="dd-MM-yyyy"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudDatePicker Date="_to" DateChanged="@(async d => { _to = d; await ReloadAsync(); })" Label="To" DateFormat="dd-MM-yyyy"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="6" sm="2">
+        <MudSelect T="PaymentMode?" Value="_mode" ValueChanged="@(async m => { _mode = m; await ReloadAsync(); })" Label="Mode"
+                   Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="PaymentMode?" Value="@((PaymentMode?)null)">All</MudSelectItem>
+            @foreach (var mode in Enum.GetValues<PaymentMode>())
+            {
+                <MudSelectItem T="PaymentMode?" Value="@((PaymentMode?)mode)">@CollectFee.ModeLabel(mode)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" sm="4">
+        <MudTextField T="string" Value="_search" ValueChanged="@(async s => { _search = s; await ReloadAsync(); })"
+                      Immediate="true" DebounceInterval="400" Placeholder="Receipt no., student or reference" Clearable="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+</MudGrid>
+
+@if (_list is not null)
+{
+    <MudText Typo="Typo.body2" Class="mb-2">
+        Collected <strong>@Money.Format(_list.TotalCollected)</strong> · @_list.TotalCount receipt(s) (cancelled receipts are not counted in the total)
+    </MudText>
+}
+
+<MudTable T="PaymentListItem" Items="_list?.Items" Loading="_loading" Dense="true" Hover="true" Elevation="0" Outlined="true"
+          Breakpoint="Breakpoint.Sm" OnRowClick="Open" RowStyle="cursor: pointer;">
+    <HeaderContent>
+        <MudTh>Receipt</MudTh>
+        <MudTh>Date</MudTh>
+        <MudTh>Student</MudTh>
+        <MudTh>Mode</MudTh>
+        <MudTh Style="text-align: right;">Amount</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Receipt">
+            @context.ReceiptNumber
+            @if (context.IsCancelled)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Error">Cancelled</MudChip>
+            }
+        </MudTd>
+        <MudTd DataLabel="Date">@context.PaymentDate.ToString("dd MMM yyyy")</MudTd>
+        <MudTd DataLabel="Student">@context.StudentName <span class="mud-text-secondary">(@context.AdmissionNo)</span></MudTd>
+        <MudTd DataLabel="Mode">@CollectFee.ModeLabel(context.Mode)</MudTd>
+        <MudTd DataLabel="Amount" Style="@(context.IsCancelled ? "text-align: right; text-decoration: line-through;" : "text-align: right;")">
+            <strong>@Money.Format(context.Amount)</strong>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4">No payments in this period.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@if (_list is { TotalPages: > 1 })
+{
+    <div class="d-flex justify-center mt-3">
+        <MudPagination Count="_list.TotalPages" Selected="_page" SelectedChanged="@(async p => { _page = p; await LoadAsync(); })" Color="Color.Primary" />
+    </div>
+}
+
+@code {
+    private DateTime? _from;
+    private DateTime? _to;
+    private PaymentMode? _mode;
+    private string? _search;
+    private int _page = 1;
+    private bool _loading = true;
+    private PaymentList? _list;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = Clock.Today();
+        _from = new DateTime(today.Year, today.Month, 1);
+        _to = today.ToDateTime(TimeOnly.MinValue);
+        await LoadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _page = 1;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _list = await PaymentSvc.ListAsync(new PaymentQuery(
+            From: _from is { } f ? DateOnly.FromDateTime(f) : null,
+            To: _to is { } t ? DateOnly.FromDateTime(t) : null,
+            Mode: _mode,
+            Search: _search,
+            Page: _page));
+        _loading = false;
+    }
+
+    private void Open(TableRowClickEventArgs<PaymentListItem> args)
+    {
+        if (args.Item is { } p) Navigation.NavigateTo($"payments/{p.Id}");
+    }
+}

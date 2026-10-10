@@ -21,15 +21,20 @@ else
 
     <MudPaper Outlined="true">
         <MudList T="string" ReadOnly="true">
-            <ChecklistStep Done="_checklist.HasReceiptPrefix" Title="Receipt prefix" Detail="Used in receipt numbers, e.g. ABC/2026-27/00001." Href="settings" />
+            <ChecklistStep Done="_checklist.HasReceiptPrefix" Title="Check your institute details and receipt prefix"
+                           Detail="Address, phone and the prefix used in receipt numbers, e.g. ABC/2026-27/00001." Href="settings" />
             <MudDivider />
-            <ChecklistStep Done="_checklist.HasLogo" Title="Institute logo" Detail="Printed on fee receipts." Href="settings" />
-            <MudDivider />
-            <ChecklistStep Done="_checklist.HasBatch" Title="Create your first batch" Detail="e.g. Class 12 Physics – Evening." Href="batches" />
+            <ChecklistStep Done="_checklist.HasLogo" Title="Upload your logo" Detail="Printed on every fee receipt." Href="settings" />
             <MudDivider />
             <ChecklistStep Done="_checklist.HasFeePlan" Title="Create a fee plan" Detail="One-time, instalments or monthly." Href="fees/plans" />
             <MudDivider />
-            <ChecklistStep Done="_checklist.StudentCount > 0" Title="Add or import students" Detail="Admit one by one or import a CSV file." Href="students" />
+            <ChecklistStep Done="_checklist.HasBatch" Title="Create your first batch" Detail="e.g. Class 12 Physics – Evening, with its default fee plan." Href="batches" />
+            <MudDivider />
+            <ChecklistStep Done="_checklist.StudentCount > 0" Title="Add your students"
+                           Detail="Import them from a CSV file in one go, or admit them one by one." Href="students/import" />
+            <MudDivider />
+            <ChecklistStep Done="_checklist.HasTeam" Title="Add your staff and teachers"
+                           Detail="Teachers mark attendance for their batches; staff collect fees." Href="settings?tab=users" />
         </MudList>
     </MudPaper>
 
@@ -42,6 +47,6 @@ else
     protected override async Task OnInitializedAsync()
     {
         _checklist = await Tenants.GetOnboardingChecklistAsync()
-                     ?? new OnboardingChecklist(false, false, false, false, 0);
+                     ?? new OnboardingChecklist(false, false, false, false, 0, false);
     }
 }

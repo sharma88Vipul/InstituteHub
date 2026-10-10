@@ -13,7 +13,7 @@ namespace InstituteHub.Application.Attendance;
 /// Owner/Staff can mark any batch at any time; a Teacher only their own batches and only for the last
 /// <see cref="TeacherEditDays"/> days.
 /// </summary>
-public sealed class AttendanceService(IAppDbContext db, ICurrentUser user, IClock clock, IUserDirectory users)
+public sealed class AttendanceService(IAppDbContext db, ICurrentUser user, IClock clock, IUserDirectory users, IBackgroundJobs jobs)
 {
     public const int TeacherEditDays = 7;
 
@@ -178,6 +178,13 @@ public sealed class AttendanceService(IAppDbContext db, ICurrentUser user, ICloc
             if (db is DbContext context) context.ChangeTracker.Clear();
             return Result.Failure<AttendanceSummary>(Error.Conflict(
                 "Attendance.Conflict", "Someone else just saved this register. Reload the page and try again."));
+        }
+
+        // Absent alerts to guardians (AbsentAlertJob): only for today's register; the job skips students
+        // already alerted, so saving the register again does not message a parent twice.
+        if (request.Date == clock.Today() && request.Marks.Any(m => m.Status == AttendanceStatus.Absent))
+        {
+            jobs.EnqueueAbsentAlerts(session.Id);
         }
 
         return AttendanceSummary.From(session.Records.Select(r => r.Status));

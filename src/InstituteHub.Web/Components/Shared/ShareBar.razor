@@ -1,0 +1,23 @@
+@* One row of a simple horizontal bar chart: label and amount above a bar showing its share of the total. *@
+
+<div class="mb-3">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Baseline" Spacing="2">
+        <MudText Typo="Typo.body2">
+            @Label
+            @if (Detail is not null)
+            {
+                <span class="mud-text-secondary"> · @Detail</span>
+            }
+        </MudText>
+        <MudText Typo="Typo.body2"><strong>@Value</strong></MudText>
+    </MudStack>
+    <MudProgressLinear Value="@Math.Clamp(Percent, 0, 100)" Color="@(Danger ? Color.Error : Color.Primary)" Rounded="true" Size="Size.Medium" Class="mt-1" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Detail { get; set; }
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+    [Parameter] public double Percent { get; set; }
+    [Parameter] public bool Danger { get; set; }
+}

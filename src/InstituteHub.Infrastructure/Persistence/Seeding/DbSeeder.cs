@@ -71,23 +71,32 @@ public static class DbSeeder
 
     private static async Task SeedMessageTemplatesAsync(AppDbContext db, CancellationToken ct)
     {
+        const string reminder = "Dear {{guardian}}, a fee of Rs {{amount}} for {{student}} is due on {{due_date}}. - {{institute}}";
+        const string overdue = "Dear {{guardian}}, the fee of Rs {{amount}} for {{student}} was due on {{due_date}} and is still pending. Please pay at the earliest. - {{institute}}";
+        const string receipt = "Dear {{guardian}}, we received Rs {{amount}} for {{student}}. Receipt {{receipt_no}}: {{receipt_link}} - {{institute}}";
+        const string absent = "Dear {{guardian}}, {{student}} was absent from {{batch}} on {{date}}. - {{institute}}";
+
+        // WhatsApp for guardians who opted in; SMS is the fallback (week 7). Provider template ids (approved WhatsApp
+        // template names / DLT ids) are filled in when a real provider is connected.
         MessageTemplate[] templates =
         [
-            new() { Code = MessageTemplateCodes.FeeReminder, Channel = MessageChannel.WhatsApp,
-                    Body = "Dear {{guardian}}, a fee of Rs {{amount}} for {{student}} is due on {{due_date}}. - {{institute}}" },
-            new() { Code = MessageTemplateCodes.FeeOverdue, Channel = MessageChannel.WhatsApp,
-                    Body = "Dear {{guardian}}, the fee of Rs {{amount}} for {{student}} was due on {{due_date}} and is still pending. Please pay at the earliest. - {{institute}}" },
-            new() { Code = MessageTemplateCodes.PaymentReceipt, Channel = MessageChannel.WhatsApp,
-                    Body = "Dear {{guardian}}, we received Rs {{amount}} for {{student}}. Receipt {{receipt_no}}: {{receipt_link}} - {{institute}}" },
-            new() { Code = MessageTemplateCodes.AbsentAlert, Channel = MessageChannel.WhatsApp,
-                    Body = "Dear {{guardian}}, {{student}} was absent from {{batch}} on {{date}}. - {{institute}}" },
+            new() { Code = MessageTemplateCodes.FeeReminder, Channel = MessageChannel.WhatsApp, Body = reminder },
+            new() { Code = MessageTemplateCodes.FeeOverdue, Channel = MessageChannel.WhatsApp, Body = overdue },
+            new() { Code = MessageTemplateCodes.PaymentReceipt, Channel = MessageChannel.WhatsApp, Body = receipt },
+            new() { Code = MessageTemplateCodes.AbsentAlert, Channel = MessageChannel.WhatsApp, Body = absent },
+            new() { Code = MessageTemplateCodes.FeeReminder, Channel = MessageChannel.Sms, Body = reminder },
+            new() { Code = MessageTemplateCodes.FeeOverdue, Channel = MessageChannel.Sms, Body = overdue },
+            new() { Code = MessageTemplateCodes.PaymentReceipt, Channel = MessageChannel.Sms, Body = receipt },
+            new() { Code = MessageTemplateCodes.AbsentAlert, Channel = MessageChannel.Sms, Body = absent },
         ];
 
-        var existing = await db.MessageTemplates.IgnoreQueryFilters()
-            .Where(t => t.TenantId == null)
-            .Select(t => t.Code)
-            .ToListAsync(ct);
-        db.MessageTemplates.AddRange(templates.Where(t => !existing.Contains(t.Code)));
+        var existing = (await db.MessageTemplates.IgnoreQueryFilters()
+                .Where(t => t.TenantId == null)
+                .Select(t => new { t.Code, t.Channel })
+                .ToListAsync(ct))
+            .Select(t => (t.Code, t.Channel))
+            .ToHashSet();
+        db.MessageTemplates.AddRange(templates.Where(t => !existing.Contains((t.Code, t.Channel))));
         await db.SaveChangesAsync(ct);
     }
 

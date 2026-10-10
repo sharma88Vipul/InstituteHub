@@ -1,0 +1,239 @@
+/* Same typography, colours and shapes as the MudBlazor pages (theme: primary #1E5AA8, radius 8px, Roboto). */
+.account-page {
+    font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: rgba(0, 0, 0, .87);
+    font-size: .875rem;
+    line-height: 1.43;
+}
+
+.account-header {
+    margin-bottom: 1rem;
+}
+
+.account-title {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 400;
+    line-height: 1.334;
+}
+
+.account-subtitle {
+    margin: .25rem 0 0;
+    color: rgba(0, 0, 0, .6);
+}
+
+.account-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+}
+
+.account-nav,
+.account-content {
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+.account-nav {
+    padding: .5rem;
+}
+
+.account-content {
+    padding: 1.25rem;
+    min-width: 0;
+}
+
+/* Settings menu: a list like the app's side menu; a scrollable row of tabs on phones. */
+.account-nav ::deep .nav {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: .25rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.account-nav ::deep .nav-link {
+    display: block;
+    padding: .5rem .75rem;
+    border-radius: 6px;
+    color: rgba(0, 0, 0, .87);
+    font-size: .875rem;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+    .account-nav ::deep .nav-link:hover {
+        background: rgba(0, 0, 0, .04);
+    }
+
+    .account-nav ::deep .nav-link.active {
+        background: rgba(30, 90, 168, .1);
+        color: #1e5aa8;
+        font-weight: 500;
+    }
+
+/* Template page content */
+.account-content ::deep h3 {
+    margin: 0 0 1rem;
+    font-size: 1.25rem;
+    font-weight: 500;
+    line-height: 1.6;
+}
+
+.account-content ::deep h4,
+.account-content ::deep h5 {
+    margin: 1.25rem 0 .5rem;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.account-content ::deep p {
+    margin: 0 0 .75rem;
+    max-width: 40rem;
+}
+
+.account-content ::deep a:not(.btn) {
+    color: #1e5aa8;
+}
+
+.account-content ::deep hr {
+    margin: 1rem 0;
+    border-color: #e0e0e0;
+    opacity: 1;
+}
+
+.account-content ::deep .row {
+    margin-left: 0;
+    margin-right: 0;
+}
+
+    .account-content ::deep .row > [class*="col-"] {
+        width: 100%;
+        max-width: 28rem;
+        flex: 0 0 100%;
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+/* Inputs: outlined fields like MudTextField Variant.Outlined. */
+.account-content ::deep .form-control {
+    border-color: rgba(0, 0, 0, .23);
+    border-radius: 8px;
+    font-size: .875rem;
+}
+
+    .account-content ::deep .form-control:focus {
+        border-color: #1e5aa8;
+        box-shadow: 0 0 0 1px #1e5aa8;
+    }
+
+.account-content ::deep .form-floating > label {
+    color: rgba(0, 0, 0, .6);
+    font-size: .875rem;
+}
+
+.account-content ::deep .text-danger,
+.account-content ::deep .validation-message {
+    color: #f44336 !important;
+    font-size: .75rem;
+}
+
+/* Buttons: MudButton look (uppercase, medium weight, 8px corners). */
+.account-content ::deep .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: .875rem;
+    font-weight: 500;
+    letter-spacing: .02857em;
+    text-transform: uppercase;
+    box-shadow: none;
+}
+
+.account-content ::deep .btn-lg {
+    padding: 6px 16px;
+    font-size: .875rem;
+}
+
+.account-content ::deep .w-100.btn {
+    width: auto !important;
+    min-width: 8rem;
+}
+
+.account-content ::deep .btn-primary {
+    background: #1e5aa8;
+    border-color: #1e5aa8;
+    color: #fff;
+}
+
+    .account-content ::deep .btn-primary:hover {
+        background: #184a8b;
+        border-color: #184a8b;
+    }
+
+.account-content ::deep .btn-danger {
+    background: #f44336;
+    border-color: #f44336;
+}
+
+.account-content ::deep .btn-outline-danger {
+    color: #f44336;
+    border-color: rgba(244, 67, 54, .5);
+    background: transparent;
+}
+
+    .account-content ::deep .btn-outline-danger:hover {
+        background: rgba(244, 67, 54, .04);
+        color: #f44336;
+    }
+
+.account-content ::deep .btn-link {
+    text-transform: none;
+    color: #1e5aa8;
+}
+
+/* Status / warning messages: MudAlert-like. */
+.account-content ::deep .alert {
+    border: 0;
+    border-radius: 8px;
+    padding: .75rem 1rem;
+    font-size: .875rem;
+}
+
+.account-content ::deep .alert-success {
+    background: #edf7ed;
+    color: #1e4620;
+}
+
+.account-content ::deep .alert-danger {
+    background: #fdeded;
+    color: #5f2120;
+}
+
+.account-content ::deep .alert-warning {
+    background: #fff4e5;
+    color: #663c00;
+}
+
+@media (min-width: 768px) {
+    .account-grid {
+        grid-template-columns: 14rem 1fr;
+        align-items: start;
+    }
+
+    .account-nav ::deep .nav {
+        flex-direction: column;
+        overflow-x: visible;
+    }
+
+    .account-content {
+        padding: 1.5rem;
+    }
+}

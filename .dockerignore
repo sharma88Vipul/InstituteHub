@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/*.user
+**/App_Data/
+**/node_modules/
+.git/
+.github/
+tests/
+deploy/.env
+deploy/backups/
+*.md

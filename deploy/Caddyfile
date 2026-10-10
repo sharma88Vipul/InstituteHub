@@ -1,0 +1,14 @@
+# HTTPS certificates are obtained and renewed automatically (Let's Encrypt).
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Blazor Server uses a WebSocket per open tab; Caddy proxies it as is.
+	reverse_proxy app:8080
+}

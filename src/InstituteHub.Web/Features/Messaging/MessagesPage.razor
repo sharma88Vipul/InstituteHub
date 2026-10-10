@@ -1,0 +1,219 @@
+@page "/reminders"
+@page "/messages"
+@attribute [Authorize(Policy = Policies.SendReminders)]
+
+@using InstituteHub.Application.Messaging
+@using InstituteHub.Domain.Messaging
+
+@inject MessagingService MessagingSvc
+@inject IClock Clock
+@inject ISnackbar Snackbar
+@inject IWebHostEnvironment Env
+
+<PageTitle>Reminders – InstituteHub</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-2">
+    <MudText Typo="Typo.h5">Reminders and messages</MudText>
+    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Send"
+                   Disabled="_queueing" OnClick="SendRemindersNowAsync">Send today's reminders now</MudButton>
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" aria-label="Refresh" OnClick="LoadAsync" />
+    </MudStack>
+</MudStack>
+
+<MudText Typo="Typo.body2" Class="mb-3">
+    Fee reminders go out every day at 10:00 AM to the primary guardian: @ReminderRules.DaysBefore days before a fee is due,
+    on the due date, and every @ReminderRules.OverdueRepeatDays days while it is overdue. A parent with two children gets one
+    message with the total. Receipts are sent after each payment and absent alerts after attendance is saved.
+    WhatsApp is used when the guardian has agreed to it; otherwise SMS, if your plan includes it.
+</MudText>
+
+<MudGrid Spacing="2" Class="mb-2">
+    <MudItem xs="6" sm="2">
+        <MudDatePicker Date="_from" DateChanged="@(async d => { _from = d; await ReloadAsync(); })" Label="From" DateFormat="dd-MM-yyyy"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="6" sm="2">
+        <MudDatePicker Date="_to" DateChanged="@(async d => { _to = d; await ReloadAsync(); })" Label="To" DateFormat="dd-MM-yyyy"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="6" sm="2">
+        <MudSelect T="string" Value="_template" ValueChanged="@(async t => { _template = t; await ReloadAsync(); })" Label="Type"
+                   Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+            @* Not "code": Razor reads @code as the @code { } directive. *@
+            @foreach (var templateCode in MessageLabels.TemplateCodes)
+            {
+                <MudSelectItem T="string" Value="@templateCode">@MessageLabels.Template(templateCode)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" sm="2">
+        <MudSelect T="MessageStatus?" Value="_status" ValueChanged="@(async s => { _status = s; await ReloadAsync(); })" Label="Status"
+                   Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="MessageStatus?" Value="@((MessageStatus?)null)">All</MudSelectItem>
+            @foreach (var status in new[] { MessageStatus.Sent, MessageStatus.Delivered, MessageStatus.Read, MessageStatus.Failed })
+            {
+                <MudSelectItem T="MessageStatus?" Value="@((MessageStatus?)status)">@status</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudTextField T="string" Value="_search" ValueChanged="@(async s => { _search = s; await ReloadAsync(); })"
+                      Immediate="true" DebounceInterval="400" Placeholder="Guardian, student or phone" Clearable="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+</MudGrid>
+
+@if (_page is { } counts)
+{
+    <MudStack Row="true" Spacing="1" Wrap="Wrap.Wrap" Class="mb-2">
+        <MudChip T="string" Size="Size.Small" Color="Color.Info">Sent @counts.Counts.Sent</MudChip>
+        <MudChip T="string" Size="Size.Small" Color="Color.Success">Delivered @counts.Counts.Delivered</MudChip>
+        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Read @counts.Counts.Read</MudChip>
+        <MudChip T="string" Size="Size.Small" Color="Color.Error">Failed @counts.Counts.Failed</MudChip>
+        @if (Env.IsDevelopment())
+        {
+            <MudTooltip Text="Development only: the fake sender never reports delivery, so this marks its 'Sent' messages on this page as Delivered – the same update a provider webhook makes.">
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="SimulateDeliveryAsync">Mark fake messages delivered</MudButton>
+            </MudTooltip>
+        }
+    </MudStack>
+}
+
+<MudTable T="MessageLogItem" Items="_page?.Items" Loading="_loading" Dense="true" Hover="true" Elevation="0" Outlined="true"
+          Breakpoint="Breakpoint.Sm">
+    <HeaderContent>
+        <MudTh>When</MudTh>
+        <MudTh>To</MudTh>
+        <MudTh>Student</MudTh>
+        <MudTh>Type</MudTh>
+        <MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="When">@MessageLabels.When(context.CreatedAt)</MudTd>
+        <MudTd DataLabel="To">
+            @(context.GuardianName ?? "-")
+            <span class="mud-text-secondary">@PhoneNumber.Format(context.ToPhone)</span>
+        </MudTd>
+        <MudTd DataLabel="Student">
+            @if (context.StudentId is { } studentId)
+            {
+                <MudLink Href="@($"students/{studentId}")">@context.StudentName</MudLink>
+            }
+            else
+            {
+                <span class="mud-text-secondary">Several</span>
+            }
+        </MudTd>
+        <MudTd DataLabel="Type">@MessageLabels.Template(context.TemplateCode) <span class="mud-text-secondary">· @MessageLabels.Channel(context.Channel)</span></MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Size="Size.Small" Color="@MessageLabels.StatusColor(context.Status)">@context.Status</MudChip>
+            @if (context.Error is { } error)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block">@error</MudText>
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText Class="pa-4">No messages in this period. Messages appear here as reminders, receipts and absent alerts go out.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@if (_page is { TotalPages: > 1 })
+{
+    <div class="d-flex justify-center mt-3">
+        <MudPagination Count="_page.TotalPages" Selected="_pageNo" SelectedChanged="@(async p => { _pageNo = p; await LoadAsync(); })" Color="Color.Primary" />
+    </div>
+}
+
+@code {
+    private DateTime? _from;
+    private DateTime? _to;
+    private string? _template;
+    private MessageStatus? _status;
+    private string? _search;
+    private int _pageNo = 1;
+    private bool _loading = true;
+    private bool _queueing;
+    private MessageLogPage? _page;
+
+    // One DbContext per circuit: filter changes, paging and refresh must not query at the same time.
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var today = Clock.Today();
+        _from = today.AddDays(-30).ToDateTime(TimeOnly.MinValue);
+        _to = today.ToDateTime(TimeOnly.MinValue);
+        await LoadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _pageNo = 1;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        await _dbLock.WaitAsync();
+        try
+        {
+            _loading = true;
+            _page = await MessagingSvc.ListAsync(new MessageLogQuery(
+                From: _from is { } f ? DateOnly.FromDateTime(f) : null,
+                To: _to is { } t ? DateOnly.FromDateTime(t) : null,
+                TemplateCode: _template,
+                Status: _status,
+                Search: _search,
+                Page: _pageNo));
+        }
+        finally
+        {
+            _loading = false;
+            _dbLock.Release();
+        }
+    }
+
+    private async Task SendRemindersNowAsync()
+    {
+        _queueing = true;
+        var result = MessagingSvc.QueueFeeRemindersNow();
+        if (result.IsFailure)
+        {
+            Snackbar.Add(result.FirstError?.Message ?? "Could not queue the reminders.", Severity.Error);
+        }
+        else
+        {
+            Snackbar.Add("Reminders queued. They go out in a few seconds; press refresh to see them.", Severity.Success);
+            await Task.Delay(TimeSpan.FromSeconds(6));
+            await LoadAsync();
+        }
+        _queueing = false;
+    }
+
+    private async Task SimulateDeliveryAsync()
+    {
+        if (_page is null) return;
+        var fakeIds = _page.Items
+            .Where(m => m.Status == MessageStatus.Sent && m.ProviderMessageId is { } id && id.StartsWith("fake-", StringComparison.Ordinal))
+            .Select(m => m.ProviderMessageId!)
+            .ToList();
+
+        await _dbLock.WaitAsync();
+        try
+        {
+            foreach (var id in fakeIds)
+            {
+                await MessagingSvc.ApplyDeliveryStatusAsync(id, MessageStatus.Delivered, null);
+            }
+        }
+        finally
+        {
+            _dbLock.Release();
+        }
+
+        Snackbar.Add($"{fakeIds.Count} message(s) marked delivered.", Severity.Info);
+        await LoadAsync();
+    }
+}

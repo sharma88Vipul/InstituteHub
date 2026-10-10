@@ -9,4 +9,7 @@ public interface IUserDirectory
     Task<IReadOnlyList<UserOption>> GetTeachersAsync(CancellationToken ct = default);
 
     Task<IReadOnlyDictionary<Guid, string>> GetNamesAsync(IEnumerable<Guid> userIds, CancellationToken ct = default);
+
+    /// <summary>Active users of the current institute (owner included).</summary>
+    Task<int> CountActiveUsersAsync(CancellationToken ct = default);
 }

@@ -1,0 +1,7 @@
+.collect-save-bar {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 0 16px;
+    background: var(--mud-palette-background);
+    z-index: 2;
+}

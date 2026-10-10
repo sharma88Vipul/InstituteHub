@@ -1,0 +1,461 @@
+@page "/settings"
+@attribute [Authorize(Policy = Policies.ManageInstitute)]
+
+@using System.Security.Cryptography
+@using InstituteHub.Application.Billing
+@using InstituteHub.Application.Tenants
+@using InstituteHub.Application.Users
+@using Microsoft.AspNetCore.Components.Forms
+
+@inject TenantService Tenants
+@inject IUserManagement UserAdmin
+@inject IFeatureService Plans
+@inject ISnackbar Snackbar
+
+<PageTitle>Settings – InstituteHub</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-3">Settings</MudText>
+
+<MudTabs Outlined="true" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4"
+         ActivePanelIndex="_tab" ActivePanelIndexChanged="TabChanged">
+
+    @* ------------------------------------------------------------ institute *@
+    <MudTabPanel Text="Institute" Icon="@Icons.Material.Filled.Business">
+        @if (_profile is null)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else
+        {
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="8">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Details printed on receipts</MudText>
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12"><MudTextField @bind-Value="_form.Name" Label="Institute name" Variant="Variant.Outlined" Required="true" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.OwnerName" Label="Owner name" Variant="Variant.Outlined" Required="true" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Phone" Label="Phone" Variant="Variant.Outlined" Required="true" InputType="InputType.Telephone" /></MudItem>
+                        <MudItem xs="12"><MudTextField @bind-Value="_form.Email" Label="Email" Variant="Variant.Outlined" InputType="InputType.Email" /></MudItem>
+                        <MudItem xs="12"><MudTextField @bind-Value="_form.AddressLine" Label="Address" Variant="Variant.Outlined" /></MudItem>
+                        <MudItem xs="12" sm="4"><MudTextField @bind-Value="_form.City" Label="City" Variant="Variant.Outlined" /></MudItem>
+                        <MudItem xs="6" sm="4"><MudTextField @bind-Value="_form.State" Label="State" Variant="Variant.Outlined" /></MudItem>
+                        <MudItem xs="6" sm="4"><MudTextField @bind-Value="_form.Pincode" Label="PIN code" Variant="Variant.Outlined" InputType="InputType.Number" /></MudItem>
+                        <MudItem xs="12" sm="6"><MudTextField @bind-Value="_form.Gstin" Label="GSTIN (optional)" Variant="Variant.Outlined" /></MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="_form.ReceiptPrefix" Label="Receipt prefix" Variant="Variant.Outlined" Required="true"
+                                          HelperText="@($"Receipts look like {(_form.ReceiptPrefix ?? "").ToUpperInvariant()}/2026-27/00001. A change applies to new receipts.")" />
+                        </MudItem>
+                    </MudGrid>
+                    <ErrorSummary Errors="_profileErrors" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" Disabled="_busy" OnClick="SaveProfileAsync">Save details</MudButton>
+                </MudItem>
+
+                <MudItem xs="12" md="4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Logo</MudText>
+                    <MudPaper Outlined="true" Class="pa-3 d-flex align-center justify-center" Style="height: 140px;">
+                        @if (_profile.HasLogo)
+                        {
+                            <img src="@($"institute/logo?v={_logoVersion}")" alt="Institute logo" style="max-height: 110px; max-width: 100%; object-fit: contain;" />
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">No logo yet</MudText>
+                        }
+                    </MudPaper>
+                    <MudText Typo="Typo.caption" Class="d-block my-2">PNG or JPG, up to 512 KB. A square logo looks best on receipts.</MudText>
+                    <MudStack Row="true" Spacing="2" Wrap="Wrap.Wrap">
+                        <MudFileUpload T="IBrowserFile" FilesChanged="UploadLogoAsync" Accept=".png,.jpg,.jpeg,image/png,image/jpeg" MaximumFileCount="1">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Upload" Disabled="_busy">
+                                    @(_profile.HasLogo ? "Change logo" : "Upload logo")
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                        @if (_profile.HasLogo)
+                        {
+                            <MudButton Variant="Variant.Text" Color="Color.Error" Disabled="_busy" OnClick="RemoveLogoAsync">Remove</MudButton>
+                        }
+                    </MudStack>
+                    <ErrorSummary Errors="_logoErrors" />
+                </MudItem>
+            </MudGrid>
+        }
+    </MudTabPanel>
+
+    @* ------------------------------------------------------------ users *@
+    <MudTabPanel Text="Users" Icon="@Icons.Material.Filled.People">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Class="mb-2">
+            <MudText Typo="Typo.body2" Style="max-width: 40rem;">
+                <strong>Staff</strong> manage students, fees and reminders. <strong>Teachers</strong> mark attendance for the
+                batches assigned to them. Share the email and temporary password with the person; they can change the password
+                under My account.
+            </MudText>
+            @if (!_adding)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="StartAdding">Add user</MudButton>
+            }
+        </MudStack>
+
+        @if (_adding)
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">New user</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="_newUser.FullName" Label="Full name" Variant="Variant.Outlined" Required="true" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="_newUser.Email" Label="Email (login)" Variant="Variant.Outlined" Required="true" InputType="InputType.Email" /></MudItem>
+                    <MudItem xs="12" sm="6"><MudTextField @bind-Value="_newUser.Phone" Label="Mobile (optional)" Variant="Variant.Outlined" InputType="InputType.Telephone" /></MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudSelect T="string" @bind-Value="_newUser.Role" Label="Role" Variant="Variant.Outlined">
+                            <MudSelectItem T="string" Value="@Roles.Staff">Staff (office)</MudSelectItem>
+                            <MudSelectItem T="string" Value="@Roles.Teacher">Teacher</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_newUser.Password" Label="Temporary password" Variant="Variant.Outlined" Required="true"
+                                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Autorenew" OnAdornmentClick="NewPassword"
+                                      AdornmentAriaLabel="Generate a password" HelperText="At least 8 characters with a capital letter, a digit and a symbol." />
+                    </MudItem>
+                </MudGrid>
+                <ErrorSummary Errors="_userErrors" />
+                <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mt-2">
+                    <MudButton Variant="Variant.Text" OnClick="() => _adding = false">Cancel</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="AddUserAsync">Add user</MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+
+        @if (_resetFor is { } resetUser)
+        {
+            <MudPaper Outlined="true" Class="pa-4 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">New password for @resetUser.FullName</MudText>
+                <MudTextField @bind-Value="_resetPassword" Label="Temporary password" Variant="Variant.Outlined"
+                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Autorenew"
+                              OnAdornmentClick="() => _resetPassword = GeneratePassword()" AdornmentAriaLabel="Generate a password" />
+                <ErrorSummary Errors="_userErrors" />
+                <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mt-2">
+                    <MudButton Variant="Variant.Text" OnClick="() => _resetFor = null">Cancel</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="ResetPasswordAsync">Set password</MudButton>
+                </MudStack>
+            </MudPaper>
+        }
+
+        <MudTable T="UserListItem" Items="_users" Loading="@(_users is null)" Dense="true" Hover="true" Elevation="0" Outlined="true" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh>Email</MudTh>
+                <MudTh>Role</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Name">
+                    @context.FullName
+                    @if (context.IsCurrentUser)
+                    {
+                        <span class="mud-text-secondary"> (you)</span>
+                    }
+                    @if (context.Phone is { } phone)
+                    {
+                        <MudText Typo="Typo.caption" Class="d-block mud-text-secondary">@PhoneNumber.Format(phone)</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Email">@context.Email</MudTd>
+                <MudTd DataLabel="Role"><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@context.Role</MudChip></MudTd>
+                <MudTd DataLabel="Status">
+                    <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">@(context.IsActive ? "Active" : "Deactivated")</MudChip>
+                </MudTd>
+                <MudTd>
+                    @if (context.Role != Roles.Owner)
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="_busy" OnClick="() => StartReset(context)">Reset password</MudButton>
+                        <MudButton Size="Size.Small" Variant="Variant.Text" Color="@(context.IsActive ? Color.Error : Color.Primary)" Disabled="_busy"
+                                   OnClick="() => SetActiveAsync(context, !context.IsActive)">@(context.IsActive ? "Deactivate" : "Activate")</MudButton>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudTabPanel>
+
+    @* ------------------------------------------------------------ plan *@
+    <MudTabPanel Text="Plan" Icon="@Icons.Material.Filled.WorkspacePremium">
+        @if (_usage is not { } usage)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else
+        {
+            <MudGrid Spacing="3">
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.h6">@usage.Limits.PlanName plan</MudText>
+                    @if (usage.Limits.IsTrial && usage.Limits.TrialEndsAt is { } ends)
+                    {
+                        <MudText Typo="Typo.body2" Class="mb-3">Free trial until @ends.ToOffset(TimeSpan.FromHours(5.5)).ToString("dd MMM yyyy"). All features are on during the trial.</MudText>
+                    }
+                    <ShareBar Label="Active students" Value="@($"{usage.ActiveStudents} of {usage.Limits.MaxStudents}")"
+                              Percent="@usage.UsedPercent" Danger="@(usage.UsedPercent >= 90)" />
+                    <MudText Typo="Typo.caption" Class="d-block">
+                        Students marked Inactive or Left do not count. @usage.RemainingStudents more student(s) can be admitted.
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Features</MudText>
+                    @foreach (var (feature, label) in FeatureLabels)
+                    {
+                        var on = usage.Limits.Has(feature);
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                            <MudIcon Icon="@(on ? Icons.Material.Filled.CheckCircle : Icons.Material.Outlined.Cancel)"
+                                     Color="@(on ? Color.Success : Color.Default)" Size="Size.Small" />
+                            <MudText Typo="Typo.body2">@label</MudText>
+                        </MudStack>
+                    }
+                    <MudText Typo="Typo.caption" Class="d-block mt-3">To change your plan, contact InstituteHub support. Online payments for plans are coming soon.</MudText>
+                </MudItem>
+            </MudGrid>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private static readonly (string Feature, string Label)[] FeatureLabels =
+    [
+        (PlanFeatures.Reminders, "WhatsApp fee reminders and receipts"),
+        (PlanFeatures.Sms, "SMS when a parent has not agreed to WhatsApp"),
+        (PlanFeatures.AbsentAlerts, "Absent alerts to parents"),
+    ];
+
+    [SupplyParameterFromQuery(Name = "tab")]
+    private string? TabFromQuery { get; set; }
+
+    private int _tab;
+    private bool _busy;
+    private InstituteProfile? _profile;
+    private ProfileForm _form = new();
+    private int _logoVersion;
+    private IReadOnlyList<Error>? _profileErrors;
+    private IReadOnlyList<Error>? _logoErrors;
+
+    private IReadOnlyList<UserListItem>? _users;
+    private bool _adding;
+    private UserForm _newUser = new();
+    private UserListItem? _resetFor;
+    private string? _resetPassword;
+    private IReadOnlyList<Error>? _userErrors;
+
+    private PlanUsage? _usage;
+
+    // One DbContext per circuit: every database call goes through this lock.
+    private readonly SemaphoreSlim _dbLock = new(1, 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _tab = TabFromQuery switch { "users" => 1, "plan" => 2, _ => 0 };
+        await LoadProfileAsync();
+        await LoadTabAsync(_tab);
+    }
+
+    private async Task TabChanged(int index)
+    {
+        _tab = index;
+        await LoadTabAsync(index);
+    }
+
+    private async Task LoadTabAsync(int index)
+    {
+        if (index == 1 && _users is null) await LoadUsersAsync();
+        if (index == 2 && _usage is null) await Locked(async () => _usage = await Plans.GetUsageAsync());
+    }
+
+    // ------------------------------------------------------------ institute
+
+    private async Task LoadProfileAsync() => await Locked(async () =>
+    {
+        _profile = await Tenants.GetProfileAsync();
+        if (_profile is { } p)
+        {
+            _form = new ProfileForm
+            {
+                Name = p.Name, OwnerName = p.OwnerName, Phone = p.Phone, Email = p.Email, AddressLine = p.AddressLine,
+                City = p.City, State = p.State, Pincode = p.Pincode, Gstin = p.Gstin, ReceiptPrefix = p.ReceiptPrefix,
+            };
+        }
+    });
+
+    private async Task SaveProfileAsync()
+    {
+        Result? result = null;
+        await Locked(async () => result = await Tenants.UpdateProfileAsync(new InstituteProfileRequest(
+            _form.Name ?? "", _form.OwnerName ?? "", _form.Phone ?? "", _form.Email, _form.AddressLine, _form.City,
+            _form.State, _form.Pincode, _form.Gstin, _form.ReceiptPrefix ?? "")));
+        if (result is null) return;
+
+        _profileErrors = result.IsFailure ? result.Errors : null;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add("Institute details saved.", Severity.Success);
+            await LoadProfileAsync();
+        }
+    }
+
+    private async Task UploadLogoAsync(IBrowserFile? file)
+    {
+        if (file is null) return;
+        _logoErrors = null;
+        if (file.Size > TenantService.MaxLogoBytes)
+        {
+            _logoErrors = [Error.Validation("Logo", "The logo must be smaller than 512 KB.")];
+            return;
+        }
+
+        Result? result = null;
+        await Locked(async () =>
+        {
+            // Copy to memory first: the browser stream must be read on the circuit before the service writes the file.
+            await using var browser = file.OpenReadStream(TenantService.MaxLogoBytes);
+            using var memory = new MemoryStream();
+            await browser.CopyToAsync(memory);
+            memory.Position = 0;
+            result = await Tenants.SetLogoAsync(memory, file.ContentType, memory.Length);
+        });
+        if (result is null) return;
+
+        _logoErrors = result.IsFailure ? result.Errors : null;
+        if (result.IsSuccess)
+        {
+            _logoVersion++;
+            Snackbar.Add("Logo saved. It is printed on new receipts.", Severity.Success);
+            await LoadProfileAsync();
+        }
+    }
+
+    private async Task RemoveLogoAsync()
+    {
+        await Locked(async () => await Tenants.RemoveLogoAsync());
+        _logoVersion++;
+        await LoadProfileAsync();
+    }
+
+    // ------------------------------------------------------------ users
+
+    private async Task LoadUsersAsync() => await Locked(async () => _users = await UserAdmin.ListAsync());
+
+    private void StartAdding()
+    {
+        _newUser = new UserForm { Role = Roles.Teacher, Password = GeneratePassword() };
+        _userErrors = null;
+        _resetFor = null;
+        _adding = true;
+    }
+
+    private void NewPassword() => _newUser.Password = GeneratePassword();
+
+    private async Task AddUserAsync()
+    {
+        Result<Guid>? result = null;
+        await Locked(async () => result = await UserAdmin.CreateAsync(new NewUserRequest(
+            _newUser.FullName ?? "", _newUser.Email ?? "", _newUser.Phone, _newUser.Role ?? "", _newUser.Password ?? "")));
+        if (result is null) return;
+
+        _userErrors = result.IsFailure ? result.Errors : null;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add($"{_newUser.FullName} can now log in with {_newUser.Email} and the temporary password {_newUser.Password}.",
+                Severity.Success, o => o.RequireInteraction = true);
+            _adding = false;
+            _users = null;
+            await LoadUsersAsync();
+        }
+    }
+
+    private void StartReset(UserListItem user)
+    {
+        _resetFor = user;
+        _resetPassword = GeneratePassword();
+        _userErrors = null;
+        _adding = false;
+    }
+
+    private async Task ResetPasswordAsync()
+    {
+        if (_resetFor is not { } target) return;
+        Result? result = null;
+        await Locked(async () => result = await UserAdmin.ResetPasswordAsync(target.Id, _resetPassword ?? ""));
+        if (result is null) return;
+
+        _userErrors = result.IsFailure ? result.Errors : null;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add($"New password for {target.FullName}: {_resetPassword}", Severity.Success, o => o.RequireInteraction = true);
+            _resetFor = null;
+        }
+    }
+
+    private async Task SetActiveAsync(UserListItem target, bool active)
+    {
+        Result? result = null;
+        await Locked(async () => result = await UserAdmin.SetActiveAsync(target.Id, active));
+        if (result is null) return;
+
+        if (result.IsFailure)
+        {
+            Snackbar.Add(result.FirstError?.Message ?? "Could not change the user.", Severity.Error);
+            return;
+        }
+        Snackbar.Add(active ? $"{target.FullName} can log in again." : $"{target.FullName} can no longer log in.", Severity.Info);
+        _users = null;
+        await LoadUsersAsync();
+    }
+
+    /// <summary>12 characters with upper and lower case letters, digits and a symbol (meets the Identity rules).</summary>
+    private static string GeneratePassword()
+    {
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ", lower = "abcdefghijkmnpqrstuvwxyz", digits = "23456789", symbols = "#@$%&*!";
+        var all = upper + lower + digits;
+        var chars = new List<char>
+        {
+            upper[RandomNumberGenerator.GetInt32(upper.Length)],
+            lower[RandomNumberGenerator.GetInt32(lower.Length)],
+            digits[RandomNumberGenerator.GetInt32(digits.Length)],
+            symbols[RandomNumberGenerator.GetInt32(symbols.Length)],
+        };
+        while (chars.Count < 12) chars.Add(all[RandomNumberGenerator.GetInt32(all.Length)]);
+        return new string(chars.OrderBy(_ => RandomNumberGenerator.GetInt32(1000)).ToArray());
+    }
+
+    /// <summary>Runs one database call at a time; ignores clicks while another is running.</summary>
+    private async Task Locked(Func<Task> work)
+    {
+        if (!await _dbLock.WaitAsync(0)) return;
+        _busy = true;
+        try
+        {
+            await work();
+        }
+        finally
+        {
+            _busy = false;
+            _dbLock.Release();
+        }
+    }
+
+    private sealed class ProfileForm
+    {
+        public string? Name { get; set; }
+        public string? OwnerName { get; set; }
+        public string? Phone { get; set; }
+        public string? Email { get; set; }
+        public string? AddressLine { get; set; }
+        public string? City { get; set; }
+        public string? State { get; set; }
+        public string? Pincode { get; set; }
+        public string? Gstin { get; set; }
+        public string? ReceiptPrefix { get; set; }
+    }
+
+    private sealed class UserForm
+    {
+        public string? FullName { get; set; }
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+        public string? Role { get; set; }
+        public string? Password { get; set; }
+    }
+}

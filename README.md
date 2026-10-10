@@ -125,11 +125,85 @@ They need the `InitialCreate` migration from step 3.
 - **Student profile → Fees tab**: every due with amount, discount, paid, balance, overdue status and totals.
   The owner can waive an unpaid due.
 - **Fee plans → "Create missing dues"**: creates dues for enrollments that have none (e.g. students added before
-  week 5) and monthly dues up to the current month. Safe to run any time; the automatic daily job comes in week 7.
+  week 5) and monthly dues up to the current month. Safe to run any time; since week 7 a daily job does this automatically.
 - Tests: generator unit tests for all three billing types; integration tests for dues on admission, catch-up,
   waiving and discount limits.
 
-## Next (week 6)
+## What is in place (week 6)
 
-Payments: PaymentService with oldest-first allocation, atomic receipt numbers, cancel payment, receipt PDF,
-Collect fee page and pending dues page.
+- **Collect fee** (`/payments/new`, or "Collect fee" on a student's Fees tab / pending dues list): find the student,
+  see total due, overdue and advance credit; enter amount, mode (Cash, UPI, Card, Bank transfer, Cheque, Online),
+  reference and date. The page previews how the money is applied (oldest due first) and allows adjusting the split.
+  Extra money is kept as advance.
+- Saving runs in one database transaction: open dues are reloaded with their concurrency tokens, dues are updated,
+  the next receipt number is taken atomically per financial year (`PREFIX/2026-27/00001`, `receipt_counters` upsert)
+  and payment + allocations are stored. If someone else changed the same dues at the same moment, the user is asked
+  to reload and try again.
+- **Receipt** (`/payments/{id}`): on-screen receipt, **Print / PDF** (`/receipts/{id}.pdf`, A5, QuestPDF Community
+  licence), amount in words (lakh/crore), balance due now, and **Share on WhatsApp** (opens WhatsApp with a ready message).
+- **Cancel payment** (Owner only): reverses the amounts on the dues and keeps the receipt marked CANCELLED with a reason
+  (audit log entry "Cancel"). Payments are never edited.
+- **Payments** (`/payments`): date range, mode, search; total collected (cancelled excluded).
+- **Pending dues** (`/fees/dues`): Overdue / Due this week / All pending, batch filter, search, days late,
+  call / WhatsApp the parent, Collect button.
+- **Dashboard** shows today's and this month's collection and total pending dues (Owner/Staff).
+- Tests: allocator, receipt number format and amount-in-words unit tests; integration tests for oldest-first
+  allocation and receipt numbering, manual split and advance, cancellation, validation/permissions, PDF output and
+  the pending dues list.
+
+## What is in place (week 7)
+
+- **Background jobs** with Hangfire on PostgreSQL (tables in the `hangfire` schema, created on first start):
+  - `MonthlyDueJob` – daily 00:30 IST, creates the new month's dues for monthly plans (and any missing dues) for every
+    institute on trial or active.
+  - `FeeReminderJob` – daily 10:00 IST: dues due in 3 days, due today, or overdue (repeated every 7 days); one message
+    per primary guardian with the total for all their children; never twice on the same day.
+  - `SendReceiptJob` – queued after each payment: receipt message with a public link `/r/{token}` (signed with ASP.NET
+    Data Protection, valid 90 days, opens the PDF without signing in).
+  - `AbsentAlertJob` – queued when today's attendance is saved with absent students; once per student per register.
+  - Each job sets the institute on `JobTenantContext` in its own scope, so tenant filters apply. Jobs are safe to retry.
+  - Dashboard: `/hangfire`, platform admin only ("Background jobs" in the menu).
+- **Messaging**: `IMessageSender` with `FakeMessageSender` (development) – messages are written to the log/Seq
+  instead of being sent. WhatsApp when the guardian opted in, otherwise SMS when the plan allows it (trials: yes).
+  Templates from `message_templates` (institute template first, then the system default; SMS copies are seeded).
+  Every message is stored in `message_logs`.
+- **Reminders page** (`/reminders`): message log with date/type/status filters, search, counts, and
+  **Send today's reminders now**. In Development a button marks fake messages as delivered.
+- **Receipt page**: shows the receipt message status and **Send again**.
+- **Delivery webhook** `POST /webhooks/whatsapp`: `{"messageId":"…","status":"delivered|read|failed"}` (or an array),
+  header `X-Signature: sha256=<HMAC-SHA256 of the body with Messaging:WebhookSecret>`; without a secret it only
+  works in Development. Statuses never move backwards. Try it with `src/InstituteHub.Web/InstituteHub.Web.http`.
+- Settings: `App:PublicBaseUrl` (links in messages), `Messaging:Provider` (only `Fake` for now), `Messaging:ApiKey`,
+  `Messaging:WebhookSecret`, `Hangfire:ServerEnabled` (false in integration tests).
+- Tests: reminder rules, template rendering, status rules and formatting (unit); reminders once a day, delivery
+  updates, receipt message + public link, SMS fallback, absent alerts and tenant isolation (integration).
+
+## What is in place (week 8) – ready for a pilot institute
+
+- **Dashboard**: today's and this month's collection, pending and overdue dues (with student counts), today's classes
+  with attendance status and a Mark button, quick actions by role, trial and plan-limit warnings, setup progress.
+- **Reports** (`/reports`): collections by payment mode, batch and day; dues ageing (not due / 1–30 / 31–60 / 61–90 /
+  90+ days late) with the most overdue students; attendance per batch and students below 75 %. Date presets (this
+  month, last month, financial year) and CSV downloads (`/reports/collections.csv`, `/reports/dues.csv`,
+  `/reports/attendance.csv`, Excel-friendly UTF-8). Teachers see attendance for their own batches only.
+- **CSV import** (`/students/import`, "Import CSV" on the student list): template download, upload, row-by-row check
+  with plain-language problems, then import through the normal admission (plan limit, enrollment and fee dues).
+  Guardians with an existing phone number are linked (siblings).
+- **Settings** (`/settings`, owner): institute details and receipt prefix, logo upload (printed on receipt PDFs), users
+  (add Staff/Teacher with a temporary password, reset password, deactivate), plan usage and features.
+- **Onboarding checklist**: details, logo, fee plan, batch, students (import), staff and teachers.
+- **Plan limits**: `IFeatureService` reads the plan (cached 5 minutes per institute) – max active students on admission,
+  import and re-activation; SMS and absent-alert features (trials get everything).
+- **Deployment**: `Dockerfile` (app + EF migration bundle), `deploy/docker-compose.prod.yml` (app, PostgreSQL, Caddy
+  HTTPS, Seq), `deploy/.env.example`, CI job that pushes the image to GitHub Container Registry.
+- **Backups**: `deploy/backup.sh` (daily, AES-256 encrypted database + files, 30 days, optional off-site copy) and
+  `deploy/restore.sh`.
+- **Monitoring**: `/health` and `/health/ready` (database + background jobs, JSON), `/health/live`; Seq in production;
+  see `deploy/README.md` for the uptime monitor and the pilot checklist.
+- Tests: CSV, import parsing, ageing buckets, plan features, profile validation (unit); import with siblings, plan
+  limit, reports, user management and profile (integration).
+
+## Next
+
+Connect a real WhatsApp/SMS provider behind `IMessageSender`; platform admin pages (`/admin`: institutes, trials,
+plans); online subscription payments (Razorpay, phase 3); bulk reminders from the pending dues page.

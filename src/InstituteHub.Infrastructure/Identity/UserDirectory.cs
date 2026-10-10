@@ -38,4 +38,10 @@ public sealed class UserDirectory(AppDbContext db, ITenantProvider tenant) : IUs
             .Where(u => u.TenantId == tenantId && ids.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.FullName != "" ? u.FullName : u.Email ?? "User", ct);
     }
+
+    public async Task<int> CountActiveUsersAsync(CancellationToken ct = default)
+    {
+        if (tenant.CurrentTenantId is not { } tenantId) return 0;
+        return await db.Users.AsNoTracking().CountAsync(u => u.TenantId == tenantId && u.IsActive, ct);
+    }
 }

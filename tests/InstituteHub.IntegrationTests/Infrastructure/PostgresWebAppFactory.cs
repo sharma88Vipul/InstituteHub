@@ -18,6 +18,9 @@ public sealed class PostgresWebAppFactory : WebApplicationFactory<Program>, IAsy
         builder.UseEnvironment("Development");   // applies migrations + seed on start-up
         builder.UseSetting("ConnectionStrings:Default", ConnectionString);
         builder.UseSetting("Seed:DemoData", "false");
+        // Jobs are only queued in tests; each test runs the messaging work itself, so nothing runs twice.
+        builder.UseSetting("Hangfire:ServerEnabled", "false");
+        builder.UseSetting("App:PublicBaseUrl", "https://test.local");
     }
 
     public async Task InitializeAsync()
